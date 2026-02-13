@@ -120,3 +120,32 @@ body{
   border-radius:999px;
   padding:4px 8px;
 }
+
+
+/* ===== Calendar layout (7 columns) ===== */
+.calendar{display:flex;flex-direction:column;gap:10px}
+.cal__head{display:grid;grid-template-columns:repeat(7,1fr);gap:10px}
+.cal__head > div{
+  text-align:center;
+  font-weight:900;
+  color:rgba(255,255,255,0.75);
+  padding:8px 0;
+}
+.cal__grid{display:grid;grid-template-columns:repeat(7,1fr);gap:10px}
+.day{
+  min-height:84px;
+  border-radius:18px;
+  border:1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.18);
+  padding:10px;
+  cursor:pointer;
+}
+.day:hover{background: rgba(0,0,0,0.26)}
+.day.muted{opacity:0.45}
+.day__num{font-weight:950;color:rgba(255,255,255,0.85);font-size:13px}
+@media (max-width:520px){
+  .cal__head{gap:8px}
+  .cal__grid{gap:8px}
+  .day{min-height:74px;padding:9px;border-radius:16px}
+}
+
