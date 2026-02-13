@@ -1,1072 +1,791 @@
-/* Personal Manager - Vanilla JS (localStorage) */
+
 'use strict';
+const $ = (s,el=document)=>el.querySelector(s);
+const uid = ()=>Math.random().toString(16).slice(2)+Date.now().toString(16);
+const fmtEUR = (n)=>Number(n||0).toLocaleString('es-ES',{style:'currency',currency:'EUR'});
+const fmtISO = (d)=>{const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');const da=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${da}`;};
+const parseISO = (s)=>{const [y,m,d]=(s||'').split('-').map(x=>parseInt(x,10)); if(!y||!m||!d) return null; return new Date(y,m-1,d);};
+const monthName = (m)=>['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][m];
 
-const $ = (sel, el=document) => el.querySelector(sel);
-const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
-const uid = () => Math.random().toString(16).slice(2) + Date.now().toString(16);
-const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
-
-function fmtEUR(n){
-  const v = Number(n || 0);
-  return v.toLocaleString('es-ES', { style:'currency', currency:'EUR' });
-}
-function fmtDateISO(d){ // Date -> YYYY-MM-DD
-  const y = d.getFullYear();
-  const m = String(d.getMonth()+1).padStart(2,'0');
-  const da = String(d.getDate()).padStart(2,'0');
-  return `${y}-${m}-${da}`;
-}
-function parseISO(s){
-  const [y,m,d] = (s||'').split('-').map(x=>parseInt(x,10));
-  if(!y||!m||!d) return null;
-  return new Date(y, m-1, d);
-}
-function monthName(m){
-  return ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][m];
-}
-function dowShort(){
-  return ['L','M','X','J','V','S','D'];
-}
-function startOfWeekMonday(d){
-  const day = d.getDay(); // 0 Sun..6 Sat
-  const diff = (day === 0 ? -6 : 1 - day);
-  const r = new Date(d);
-  r.setDate(d.getDate()+diff);
-  r.setHours(0,0,0,0);
-  return r;
-}
-
-const STORAGE_KEY = 'pm_data_v1';
-
-const defaults = {
-  app: { name: 'Personal Manager' },
-  work: {
-    config: {
-      jobName: 'Trabajo',
-      contractStart: fmtDateISO(new Date()),
-      contractEnd: '',
-      hourly: 14.35,
-      irpf: 12,
-      extraRate: 15,
-      nightRate: 18.5,
-    },
-    turns: {
-      M: { name:'Mañana', color:'#22c55e', hours: 8 },
-      T: { name:'Tarde',  color:'#f59e0b', hours: 8 },
-      N: { name:'Noche',  color:'#60a5fa', hours: 8 },
-      L: { name:'Libre',  color:'#9ca3af', hours: 0 },
-      V: { name:'Velada', color:'#a855f7', hours: 0 },
-    },
-    rotation: ['M','M','T','T','N','N','L','L'],
-    days: {} // YYYY-MM-DD -> {turn, hoursOverride, extraHours, extraRate, nightHours, nightRate}
-  },
-  economy: {
-    accounts: [
-      { id: uid(), name:'Cuenta principal', bank:'', initialBalance: 0, createdAt: Date.now() }
-    ],
-    movements: {
-      // accountId: [ {id, date, type, amount, title, note} ]
-    }
-  },
-  agenda: {
-    events: [
-      // {id, date, title, time, note}
-    ]
+const KEY='pm_data_v2';
+const defaults={
+  app:{name:'Personal Manager'},
+  economy:{
+    ui:{tab:'accounts'},
+    accounts:[{id:uid(),name:'Cuenta principal',bank:'',initialBalance:0,cards:[]}],
+    movements:{},
+    fixed:[],
+    credits:[],
+    goals:[]
   }
 };
 
-function loadData(){
+function load(){
+  const raw=localStorage.getItem(KEY);
+  if(!raw) return structuredClone(defaults);
   try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(!raw) return structuredClone(defaults);
-    const parsed = JSON.parse(raw);
-    // light merge to keep new defaults
-    return {
-      ...structuredClone(defaults),
-      ...parsed,
-      work: { ...structuredClone(defaults.work), ...(parsed.work||{}),
-        config: { ...structuredClone(defaults.work.config), ...((parsed.work||{}).config||{}) },
-        turns: { ...structuredClone(defaults.work.turns), ...((parsed.work||{}).turns||{}) },
-        rotation: Array.isArray((parsed.work||{}).rotation) ? (parsed.work.rotation) : structuredClone(defaults.work.rotation),
-        days: (parsed.work||{}).days || {}
-      },
-      economy: { ...structuredClone(defaults.economy), ...(parsed.economy||{}),
-        accounts: Array.isArray((parsed.economy||{}).accounts) ? parsed.economy.accounts : structuredClone(defaults.economy.accounts),
-        movements: (parsed.economy||{}).movements || {}
-      },
-      agenda: { ...structuredClone(defaults.agenda), ...(parsed.agenda||{}),
-        events: Array.isArray((parsed.agenda||{}).events) ? parsed.agenda.events : []
-      }
-    };
-  }catch(e){
-    console.warn('loadData error', e);
-    return structuredClone(defaults);
-  }
+    const d=JSON.parse(raw);
+    // soft merge
+    const out=structuredClone(defaults);
+    out.app={...out.app,...(d.app||{})};
+    out.economy={...out.economy,...(d.economy||{})};
+    out.economy.ui={...out.economy.ui,...((d.economy||{}).ui||{})};
+    out.economy.accounts=Array.isArray((d.economy||{}).accounts)? d.economy.accounts : out.economy.accounts;
+    out.economy.movements=(d.economy||{}).movements||out.economy.movements;
+    out.economy.fixed=Array.isArray((d.economy||{}).fixed)? d.economy.fixed : out.economy.fixed;
+    out.economy.credits=Array.isArray((d.economy||{}).credits)? d.economy.credits : out.economy.credits;
+    out.economy.goals=Array.isArray((d.economy||{}).goals)? d.economy.goals : out.economy.goals;
+    for(const a of out.economy.accounts){ if(!Array.isArray(a.cards)) a.cards=[]; }
+    return out;
+  }catch{return structuredClone(defaults);}
 }
-function saveData(){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
-}
+function save(){ localStorage.setItem(KEY, JSON.stringify(state.data)); }
+
+const state={ data:load(), view:'home', params:{}, stack:[], ecoMonth:new Date().getMonth(), ecoYear:new Date().getFullYear(), toastTimer:null };
+
 function toast(msg){
-  const t = $('#toast');
-  t.textContent = msg;
-  t.classList.remove('hidden');
-  clearTimeout(state.toastTimer);
-  state.toastTimer = setTimeout(()=> t.classList.add('hidden'), 1700);
+  const t=$('#toast'); t.textContent=msg; t.classList.remove('hidden');
+  clearTimeout(state.toastTimer); state.toastTimer=setTimeout(()=>t.classList.add('hidden'),1700);
 }
 
-/* -------- Modal -------- */
-function openModal(title, bodyNode, footNode){
-  $('#modalTitle').textContent = title;
-  const body = $('#modalBody');
-  const foot = $('#modalFoot');
-  body.innerHTML = '';
-  foot.innerHTML = '';
-  body.appendChild(bodyNode);
-  foot.appendChild(footNode);
+/* Modal */
+function openModal(title, body, foot){
+  $('#modalTitle').textContent=title;
+  const b=$('#modalBody'); const f=$('#modalFoot');
+  b.innerHTML=''; f.innerHTML='';
+  b.appendChild(body); f.appendChild(foot);
   $('#overlay').classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
+  document.body.style.overflow='hidden';
 }
 function closeModal(){
   $('#overlay').classList.add('hidden');
-  document.body.style.overflow = '';
+  document.body.style.overflow='';
 }
 $('#modalClose').addEventListener('click', closeModal);
-$('#overlay').addEventListener('click', (e)=>{
-  if(e.target.id === 'overlay') closeModal();
-});
+$('#overlay').addEventListener('click', (e)=>{ if(e.target.id==='overlay') closeModal(); });
 
-/* -------- Router / State -------- */
-const state = {
-  data: loadData(),
-  view: 'home', // home | work | economy | account | agenda
-  params: {},
-  navStack: [],
-  toastTimer: null,
-  now: new Date(),
-  workMonth: new Date().getMonth(),
-  workYear: new Date().getFullYear(),
-  ecoMonth: new Date().getMonth(),
-  ecoYear: new Date().getFullYear(),
-  agendaMonth: new Date().getMonth(),
-  agendaYear: new Date().getFullYear(),
-};
-
-function setTopbar({title, subtitle, canBack, showQuickAdd}){
-  $('#brandTitle').textContent = title;
-  $('#viewSubtitle').textContent = subtitle || '';
-  $('#btnBack').style.visibility = canBack ? 'visible' : 'hidden';
-  $('#btnQuickAdd').style.visibility = showQuickAdd ? 'visible' : 'hidden';
-}
-
-function pushView(view, params={}){
-  state.navStack.push({view: state.view, params: state.params});
-  state.view = view;
-  state.params = params;
-  render();
-}
-function popView(){
-  const prev = state.navStack.pop();
-  if(!prev){ state.view = 'home'; state.params = {}; render(); return; }
-  state.view = prev.view;
-  state.params = prev.params;
-  render();
-}
-
-$('#btnBack').addEventListener('click', ()=> popView());
-
-$('#btnSettings').addEventListener('click', ()=>{
-  const wrap = document.createElement('div');
-  wrap.className = 'form';
-  const f1 = fieldText('Nombre de la app', state.data.app.name, 'Nombre visible', (v)=>{
-    state.data.app.name = v || 'Personal Manager';
-  });
-  wrap.appendChild(f1);
-  wrap.appendChild(help('Esto solo cambia el título.'));
-  const foot = modalFoot([
-    { text:'Cerrar', kind:'btn', onClick: ()=>{ saveData(); closeModal(); render(); } },
-    { text:'Reset (borrar todo)', kind:'btn bad', onClick: ()=>{
-      if(confirm('¿Seguro? Esto borrará TODO.')){
-        localStorage.removeItem(STORAGE_KEY);
-        state.data = loadData();
-        state.navStack = [];
-        state.view = 'home';
-        toast('Datos reiniciados');
-        closeModal();
-        render();
-      }
-    }}
-  ]);
-  openModal('Ajustes', wrap, foot);
-});
-
-/* Quick add changes by view */
-$('#btnQuickAdd').addEventListener('click', ()=>{
-  if(state.view === 'economy') return openAddAccount();
-  if(state.view === 'account') return openAddMovement(state.params.accountId);
-  if(state.view === 'agenda') return openAddEvent();
-  if(state.view === 'work') return openWorkConfig();
-  // home: open chooser
-  const wrap = document.createElement('div');
-  wrap.className = 'form';
-  wrap.appendChild(help('¿Qué quieres añadir?'));
-  const foot = modalFoot([
-    { text:'Cuenta', kind:'btn primary', onClick: ()=>{ closeModal(); openAddAccount(); } },
-    { text:'Movimiento', kind:'btn', onClick: ()=>{ closeModal(); pushView('economy'); openAddAccount(); } },
-    { text:'Evento', kind:'btn', onClick: ()=>{ closeModal(); openAddEvent(); } },
-  ]);
-  openModal('Añadir', wrap, foot);
-});
-
-function render(){
-  saveData(); // keep it safe
-  const main = $('#main');
-  main.innerHTML = '';
-  const appName = state.data.app.name || 'Personal Manager';
-
-  if(state.view === 'home'){
-    setTopbar({title: appName, subtitle:'', canBack:false, showQuickAdd:false});
-    main.appendChild(renderHome());
-  } else if(state.view === 'work'){
-    setTopbar({title:'Trabajo', subtitle:'Turnos', canBack:true, showQuickAdd:true});
-    main.appendChild(renderWork());
-  } else if(state.view === 'economy'){
-    setTopbar({title:'Economía', subtitle:'Resumen + cuentas', canBack:true, showQuickAdd:true});
-    main.appendChild(renderEconomy());
-  } else if(state.view === 'account'){
-    const acc = getAccount(state.params.accountId);
-    setTopbar({title: acc ? acc.name : 'Cuenta', subtitle:'Movimientos', canBack:true, showQuickAdd:true});
-    main.appendChild(renderAccount(state.params.accountId));
-  } else if(state.view === 'agenda'){
-    setTopbar({title:'Agenda', subtitle:'Eventos', canBack:true, showQuickAdd:true});
-    main.appendChild(renderAgenda());
-  }
-}
-
-/* ---------- UI helpers ---------- */
+/* UI helpers */
 function el(tag, attrs={}, children=[]){
-  const n = document.createElement(tag);
+  const n=document.createElement(tag);
   for(const [k,v] of Object.entries(attrs||{})){
-    if(k === 'class') n.className = v;
-    else if(k === 'text') n.textContent = v;
-    else if(k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2).toLowerCase(), v);
-    else n.setAttribute(k, v);
+    if(k==='class') n.className=v;
+    else if(k==='text') n.textContent=v;
+    else if(k.startsWith('on') && typeof v==='function') n.addEventListener(k.slice(2).toLowerCase(), v);
+    else n.setAttribute(k,v);
   }
-  for(const c of children){
-    if(typeof c === 'string') n.appendChild(document.createTextNode(c));
-    else if(c) n.appendChild(c);
-  }
+  for(const c of children){ if(typeof c==='string') n.appendChild(document.createTextNode(c)); else if(c) n.appendChild(c); }
   return n;
 }
-function help(text){ return el('div', {class:'minihelp', text}); }
-function modalFoot(buttons){
-  const wrap = el('div', {});
-  for(const b of buttons){
-    const btn = el('button', {class:`${b.kind||'btn'}`, text:b.text});
-    btn.addEventListener('click', b.onClick);
-    wrap.appendChild(btn);
+function modalFoot(btns){
+  const w=el('div');
+  btns.forEach(b=>{
+    const bt=el('button',{class:b.kind||'btn',text:b.text});
+    bt.addEventListener('click', b.onClick);
+    w.appendChild(bt);
+  });
+  return w;
+}
+function fieldText(label, val, ph, onChange, type='text'){
+  const w=el('div',{class:'field'});
+  w.appendChild(el('div',{class:'label',text:label}));
+  const i=el('input',{class:'input',value:val??'',placeholder:ph??'',type});
+  i.addEventListener('input',()=>onChange(i.value));
+  w.appendChild(i); return w;
+}
+function fieldNumber(label, val, ph, onChange, step='0.01'){
+  const w=el('div',{class:'field'});
+  w.appendChild(el('div',{class:'label',text:label}));
+  const i=el('input',{class:'input',value:val??'',placeholder:ph??'',type:'number',step});
+  i.addEventListener('input',()=>onChange(i.value===''?'':Number(i.value)));
+  w.appendChild(i); return w;
+}
+function fieldDate(label, val, onChange){
+  const w=el('div',{class:'field'});
+  w.appendChild(el('div',{class:'label',text:label}));
+  const i=el('input',{class:'input',value:val??'',type:'date'});
+  i.addEventListener('input',()=>onChange(i.value));
+  w.appendChild(i); return w;
+}
+function fieldSelect(label, val, opts, onChange){
+  const w=el('div',{class:'field'});
+  w.appendChild(el('div',{class:'label',text:label}));
+  const s=el('select',{class:'select'});
+  opts.forEach(o=>{
+    const op=el('option',{value:o.value,text:o.label});
+    if(String(o.value)===String(val)) op.selected=true;
+    s.appendChild(op);
+  });
+  s.addEventListener('change',()=>onChange(s.value));
+  w.appendChild(s); return w;
+}
+function help(t){ return el('div',{class:'minihelp',text:t}); }
+function kpiItem(label, value, hint){
+  return el('div',{class:'kpi__item'},[
+    el('div',{class:'kpi__label',text:label}),
+    el('div',{class:'kpi__value',text:value}),
+    el('div',{class:'kpi__hint',text:hint})
+  ]);
+}
+
+/* Router */
+function setTopbar(title, subtitle, canBack, showAdd){
+  $('#brandTitle').textContent=title;
+  $('#viewSubtitle').textContent=subtitle||'';
+  $('#btnBack').style.visibility=canBack?'visible':'hidden';
+  $('#btnQuickAdd').style.visibility=showAdd?'visible':'hidden';
+}
+function push(view, params={}){ state.stack.push({view:state.view,params:state.params}); state.view=view; state.params=params; render(); }
+function pop(){ const p=state.stack.pop(); if(!p){ state.view='home'; state.params={}; render(); return; } state.view=p.view; state.params=p.params; render(); }
+$('#btnBack').addEventListener('click', pop);
+
+/* Settings */
+$('#btnSettings').addEventListener('click', ()=>{
+  const wrap=el('div',{class:'form'});
+  let name=state.data.app.name||'Personal Manager';
+  wrap.appendChild(fieldText('Nombre de la app', name, 'Nombre', v=>name=v));
+  wrap.appendChild(help('Esto solo cambia el título de la app.'));
+  openModal('Ajustes', wrap, modalFoot([
+    {text:'Cerrar',kind:'btn',onClick:()=>{ state.data.app.name=(name||'Personal Manager'); save(); closeModal(); render(); }},
+    {text:'Reset (borrar todo)',kind:'btn bad',onClick:()=>{
+      if(!confirm('¿Seguro? Esto borrará TODO.')) return;
+      localStorage.removeItem(KEY); state.data=load(); state.stack=[]; state.view='home';
+      toast('Datos reiniciados'); closeModal(); render();
+    }}
+  ]));
+});
+
+/* Quick add context */
+$('#btnQuickAdd').addEventListener('click', ()=>{
+  if(state.view==='economy'){
+    const tab=state.data.economy.ui.tab||'accounts';
+    if(tab==='accounts') return openAddAccount();
+    if(tab==='fixed') return openAddFixed();
+    if(tab==='credits') return openAddCredit();
+    if(tab==='goals') return openAddGoal();
   }
-  return wrap;
+  if(state.view==='account') return openAddMovement(state.params.accountId);
+  // home: show menu
+  const wrap=el('div',{class:'form'},[help('¿Qué quieres añadir?')]);
+  openModal('Añadir', wrap, modalFoot([
+    {text:'Cuenta',kind:'btn primary',onClick:()=>{closeModal(); openAddAccount();}},
+    {text:'Gasto fijo',kind:'btn',onClick:()=>{closeModal(); push('economy'); state.data.economy.ui.tab='fixed'; render(); openAddFixed();}},
+    {text:'Crédito',kind:'btn',onClick:()=>{closeModal(); push('economy'); state.data.economy.ui.tab='credits'; render(); openAddCredit();}},
+    {text:'Meta',kind:'btn',onClick:()=>{closeModal(); push('economy'); state.data.economy.ui.tab='goals'; render(); openAddGoal();}},
+  ]));
+});
+
+/* Data helpers */
+function getAcc(id){ return state.data.economy.accounts.find(a=>a.id===id)||null; }
+function movs(id){
+  if(!Array.isArray(state.data.economy.movements[id])) state.data.economy.movements[id]=[];
+  return state.data.economy.movements[id];
 }
-function fieldText(label, value, placeholder, onChange, type='text'){
-  const wrap = el('div', {class:'field'});
-  wrap.appendChild(el('div', {class:'label', text:label}));
-  const inp = el('input', {class:'input', value: value ?? '', placeholder: placeholder ?? '', type});
-  inp.addEventListener('input', ()=> onChange(inp.value));
-  wrap.appendChild(inp);
-  return wrap;
+function accBalance(id){
+  const a=getAcc(id); if(!a) return 0;
+  const s=movs(id).reduce((t,x)=>t+(x.type==='income'?Number(x.amount||0):-Number(x.amount||0)),0);
+  return Number(a.initialBalance||0)+s;
 }
-function fieldNumber(label, value, placeholder, onChange, step='0.01', min=''){
-  const wrap = el('div', {class:'field'});
-  wrap.appendChild(el('div', {class:'label', text:label}));
-  const inp = el('input', {class:'input', value: value ?? '', placeholder: placeholder ?? '', type:'number', step, min});
-  inp.addEventListener('input', ()=> onChange(inp.value === '' ? '' : Number(inp.value)));
-  wrap.appendChild(inp);
-  return wrap;
+function totalPending(){
+  const fixed=state.data.economy.fixed.filter(x=>x.active).reduce((s,x)=>s+Number(x.amount||0),0);
+  const credits=state.data.economy.credits.filter(x=>x.active).reduce((s,x)=>s+Number(x.amount||0),0);
+  return {fixed,credits,total:fixed+credits};
 }
-function fieldDate(label, value, onChange){
-  const wrap = el('div', {class:'field'});
-  wrap.appendChild(el('div', {class:'label', text:label}));
-  const inp = el('input', {class:'input', value: value ?? '', type:'date'});
-  inp.addEventListener('input', ()=> onChange(inp.value));
-  wrap.appendChild(inp);
-  return wrap;
+function totalCardUsed(){
+  let u=0;
+  state.data.economy.accounts.forEach(a=>(a.cards||[]).forEach(c=>u+=Number(c.used||0)));
+  return u;
 }
-function fieldSelect(label, value, options, onChange){
-  const wrap = el('div', {class:'field'});
-  wrap.appendChild(el('div', {class:'label', text:label}));
-  const sel = el('select', {class:'select'});
-  for(const opt of options){
-    const o = el('option', {value: opt.value, text: opt.label});
-    if(String(opt.value) === String(value)) o.selected = true;
-    sel.appendChild(o);
-  }
-  sel.addEventListener('change', ()=> onChange(sel.value));
-  wrap.appendChild(sel);
-  return wrap;
+function totals(){
+  const total=state.data.economy.accounts.reduce((s,a)=>s+accBalance(a.id),0);
+  const pending=totalPending().total;
+  const cardUsed=totalCardUsed();
+  const available=total-pending-cardUsed;
+  return {total,pending,cardUsed,available};
 }
-function fieldTextarea(label, value, placeholder, onChange){
-  const wrap = el('div', {class:'field'});
-  wrap.appendChild(el('div', {class:'label', text:label}));
-  const ta = el('textarea', {class:'textarea', placeholder: placeholder ?? ''});
-  ta.value = value ?? '';
-  ta.addEventListener('input', ()=> onChange(ta.value));
-  wrap.appendChild(ta);
-  return wrap;
+function accOpts(){
+  return [{value:'',label:'(Selecciona cuenta)'}].concat(state.data.economy.accounts.map(a=>({value:a.id,label:a.name})));
 }
 
-/* ---------- HOME ---------- */
-function renderHome(){
-  const wrap = el('div', {class:'card'});
-  const body = el('div', {class:'card__body'});
-  const tiles = el('div', {class:'bigtiles'});
-
-  tiles.appendChild(tile('Calendario de trabajo', '🗓️', ()=> pushView('work')));
-  tiles.appendChild(tile('Economía', '💳', ()=> pushView('economy')));
-  tiles.appendChild(tile('Agenda', '📌', ()=> pushView('agenda')));
-
-  body.appendChild(tiles);
-  wrap.appendChild(body);
-  return wrap;
-}
+/* Views */
 function tile(title, icon, onClick){
-  const t = el('div', {class:'tile'});
+  const t=el('div',{class:'tile'});
   t.addEventListener('click', onClick);
-  t.appendChild(el('div', {class:'tile__title', text:title}));
-  t.appendChild(el('div', {class:'tile__badge', text:icon}));
+  t.appendChild(el('div',{class:'tile__title',text:title}));
+  t.appendChild(el('div',{class:'tile__badge',text:icon}));
   return t;
 }
-
-/* ---------- WORK ---------- */
-function getTurn(code){
-  return state.data.work.turns[code] || {name: code, color:'#9ca3af', hours:0};
-}
-function getWorkDay(iso){
-  return state.data.work.days[iso] || null;
-}
-function ensureWorkDay(iso){
-  if(!state.data.work.days[iso]) state.data.work.days[iso] = { turn:'', hoursOverride:'', extraHours:0, extraRate:'', nightHours:0, nightRate:'' };
-  return state.data.work.days[iso];
-}
-function inferTurnByRotation(iso){
-  const cfg = state.data.work.config;
-  const rot = state.data.work.rotation || [];
-  if(!cfg.contractStart || rot.length === 0) return '';
-  const start = parseISO(cfg.contractStart);
-  if(!start) return '';
-  const d = parseISO(iso);
-  if(!d) return '';
-  const diffDays = Math.floor((d - start) / (1000*60*60*24));
-  if(diffDays < 0) return '';
-  return rot[diffDays % rot.length] || '';
-}
-function workStatsForMonth(y, m){
-  // compute based on each day shown in month (including overrides).
-  const cfg = state.data.work.config;
-  const daysInMonth = new Date(y, m+1, 0).getDate();
-  let baseHours = 0, extraHours = 0, nightHours = 0;
-  for(let day=1; day<=daysInMonth; day++){
-    const iso = fmtDateISO(new Date(y,m,day));
-    const rec = getWorkDay(iso);
-    const turnCode = rec?.turn || inferTurnByRotation(iso) || '';
-    const turn = getTurn(turnCode);
-    const h = (rec && rec.hoursOverride !== '' && rec.hoursOverride != null) ? Number(rec.hoursOverride||0) : Number(turn.hours||0);
-    baseHours += h;
-    extraHours += Number(rec?.extraHours||0);
-    nightHours += Number(rec?.nightHours||0);
-  }
-  const gross = (baseHours * Number(cfg.hourly||0)) + (extraHours * Number(cfg.extraRate||cfg.hourly||0)) + (nightHours * Number(cfg.nightRate||cfg.hourly||0));
-  const net = gross * (1 - (Number(cfg.irpf||0)/100));
-  return { baseHours, extraHours, nightHours, gross, net };
+function renderHome(){
+  const c=el('div',{class:'card'});
+  const b=el('div',{class:'card__body'});
+  const g=el('div',{class:'bigtiles'});
+  g.appendChild(tile('Economía','💳',()=>push('economy')));
+  // placeholders for future modules
+  g.appendChild(tile('Trabajo','🗓️',()=>toast('Trabajo: próximamente en este ZIP')));
+  g.appendChild(tile('Agenda','📌',()=>toast('Agenda: próximamente en este ZIP')));
+  b.appendChild(g); c.appendChild(b); return c;
 }
 
-function renderWork(){
-  const wrap = el('div', {class:'grid cols-1'});
-
-  const cfg = state.data.work.config;
-
-  // Controls card
-  const controls = el('div', {class:'card'});
-  const head = el('div', {class:'card__head'}, [
-    el('div', {}, [
-      el('div', {class:'card__title', text: cfg.jobName || 'Trabajo'}),
-    ]),
-    el('div', {class:'row'}, [
-      el('button', {class:'btn primary', text:'Turnos'}, []),
-    ])
-  ]);
-  head.querySelector('button').addEventListener('click', openWorkConfig);
-  const body = el('div', {class:'card__body'});
-
-  const stats = workStatsForMonth(state.workYear, state.workMonth);
-  const kpi = el('div', {class:'kpi'});
-  kpi.appendChild(kpiItem('Horas trabajadas', stats.baseHours.toFixed(2), 'Incluye horas base (turnos)'));
-  kpi.appendChild(kpiItem('Horas extra', stats.extraHours.toFixed(2), 'Pagadas a su tarifa'));
-  kpi.appendChild(kpiItem('Horas velada', stats.nightHours.toFixed(2), 'Marcadas manualmente'));
-  kpi.appendChild(kpiItem('Cash neto', fmtEUR(stats.net), `Ya descontado IRPF (${Number(cfg.irpf||0)}%)`));
-  body.appendChild(kpi);
-
-  body.appendChild(el('div', {class:'hr'}));
-
-  const picker = el('div', {class:'toolbar'});
-  const left = el('div', {class:'row'});
-  const months = Array.from({length:12}, (_,i)=> ({value:i, label: monthName(i)}));
-  const years = Array.from({length:7}, (_,i)=> {
-    const y = new Date().getFullYear() - 3 + i;
-    return {value:y, label:String(y)};
-  });
-  left.appendChild(fieldSelect('Mes', state.workMonth, months, (v)=>{ state.workMonth = Number(v); render(); }));
-  left.appendChild(fieldSelect('Año', state.workYear, years, (v)=>{ state.workYear = Number(v); render(); }));
-  const right = el('div', {class:'row'});
-  right.appendChild(el('button', {class:'btn', text:'Hoy', onclick: ()=>{
-    const n = new Date();
-    state.workMonth = n.getMonth(); state.workYear = n.getFullYear();
-    render();
-  }}));
-  picker.appendChild(left);
-  picker.appendChild(right);
-  body.appendChild(picker);
-
-  // Calendar
-  body.appendChild(renderWorkCalendar(state.workYear, state.workMonth));
-
-  controls.appendChild(head);
-  controls.appendChild(body);
-
-  wrap.appendChild(controls);
-  return wrap;
-}
-
-function kpiItem(label, value, hint){
-  const it = el('div', {class:'kpi__item'});
-  it.appendChild(el('div', {class:'kpi__label', text:label}));
-  it.appendChild(el('div', {class:'kpi__value', text:value}));
-  it.appendChild(el('div', {class:'kpi__hint', text:hint}));
-  return it;
-}
-
-function renderWorkCalendar(y, m){
-  const cal = el('div', {class:'calendar'});
-  const head = el('div', {class:'cal__head'});
-  for(const d of dowShort()) head.appendChild(el('div', {text:d}));
-  const grid = el('div', {class:'cal__grid'});
-
-  const first = new Date(y, m, 1);
-  const start = startOfWeekMonday(first);
-  for(let i=0;i<42;i++){
-    const d = new Date(start);
-    d.setDate(start.getDate()+i);
-    const iso = fmtDateISO(d);
-    const inMonth = d.getMonth() === m;
-    const cell = el('div', {class:`day ${inMonth?'':'muted'}`});
-    cell.appendChild(el('div', {class:'day__num', text:String(d.getDate())}));
-
-    const rec = getWorkDay(iso);
-    const turnCode = rec?.turn || inferTurnByRotation(iso) || '';
-    if(turnCode){
-      const turn = getTurn(turnCode);
-      const pill = el('div', {class:'pill'});
-      const dot = el('span', {class:'dot'});
-      dot.style.background = turn.color || '#7c3aed';
-      pill.appendChild(dot);
-      pill.appendChild(el('span', {text: turnCode}));
-      if(Number(rec?.extraHours||0) > 0) pill.appendChild(el('span', {text:'• +' + Number(rec.extraHours).toFixed(1)}));
-      if(Number(rec?.nightHours||0) > 0) pill.appendChild(el('span', {text:'• V'}));
-      cell.appendChild(pill);
-    }
-
-    cell.addEventListener('click', ()=> openWorkDayEditor(iso));
-    grid.appendChild(cell);
-  }
-
-  cal.appendChild(head);
-  cal.appendChild(grid);
-  return cal;
-}
-
-function openWorkConfig(){
-  const wrap = el('div', {class:'form'});
-  const cfg = structuredClone(state.data.work.config);
-  const turns = structuredClone(state.data.work.turns);
-  let rot = Array.isArray(state.data.work.rotation) ? [...state.data.work.rotation] : [];
-
-  wrap.appendChild(fieldText('Nombre del trabajo', cfg.jobName, 'Ej: Stellantis', (v)=> cfg.jobName = v));
-  wrap.appendChild(fieldDate('Inicio de contrato', cfg.contractStart, (v)=> cfg.contractStart = v));
-  wrap.appendChild(fieldDate('Fin de contrato (opcional)', cfg.contractEnd, (v)=> cfg.contractEnd = v));
-
-  const two1 = el('div', {class:'two'});
-  two1.appendChild(fieldNumber('Salario por hora (€)', cfg.hourly, '0', (v)=> cfg.hourly = v, '0.01', '0'));
-  two1.appendChild(fieldNumber('IRPF aplicado (%)', cfg.irpf, '0', (v)=> cfg.irpf = v, '0.1', '0'));
-  wrap.appendChild(two1);
-
-  const two2 = el('div', {class:'two'});
-  two2.appendChild(fieldNumber('Tarifa extra por defecto (€/h)', cfg.extraRate, '0', (v)=> cfg.extraRate = v, '0.01', '0'));
-  two2.appendChild(fieldNumber('Tarifa velada por defecto (€/h)', cfg.nightRate, '0', (v)=> cfg.nightRate = v, '0.01', '0'));
-  wrap.appendChild(two2);
-
-  wrap.appendChild(el('div', {class:'hr'}));
-  wrap.appendChild(el('div', {class:'card__title', text:'Turnos'}));
-  wrap.appendChild(help('Edita nombre, color y horas base de cada turno.'));
-
-  for(const code of Object.keys(turns)){
-    const t = turns[code];
-    const box = el('div', {class:'card', style:'box-shadow:none;'});
-    const b = el('div', {class:'card__body'});
-    b.appendChild(el('div', {class:'card__title', text:`${code} — ${t.name}`}));
-    const row = el('div', {class:'two'});
-    row.appendChild(fieldText('Nombre', t.name, '', (v)=> t.name = v));
-    row.appendChild(fieldNumber('Horas base', t.hours, '0', (v)=> t.hours = v, '0.5', '0'));
-    b.appendChild(row);
-    const cfield = fieldText('Color (hex)', t.color, '#22c55e', (v)=> t.color = v);
-    b.appendChild(cfield);
-    box.appendChild(b);
-    wrap.appendChild(box);
-  }
-
-  wrap.appendChild(el('div', {class:'hr'}));
-  wrap.appendChild(el('div', {class:'card__title', text:'Rotación (fácil)'}));
-  wrap.appendChild(help('Pulsa para añadir turnos a tu secuencia. Puedes deshacer o vaciar.'));
-
-  const rotWrap = el('div', {class:'card', style:'box-shadow:none;'});
-  const rotBody = el('div', {class:'card__body'});
-  const preview = el('div', {class:'badge', text: rot.length ? rot.join(' · ') : 'Vacío'});
-  rotBody.appendChild(preview);
-
-  const btnRow = el('div', {class:'row', style:'margin-top:10px;'});
-  for(const code of Object.keys(turns)){
-    const t = turns[code];
-    const b = el('button', {class:'btn', text: code});
-    b.style.borderColor = 'rgba(255,255,255,0.12)';
-    b.addEventListener('click', ()=>{
-      rot.push(code);
-      preview.textContent = rot.join(' · ');
-    });
-    btnRow.appendChild(b);
-  }
-  rotBody.appendChild(btnRow);
-
-  const row2 = el('div', {class:'row', style:'margin-top:10px;'});
-  const undo = el('button', {class:'btn', text:'Deshacer'});
-  undo.addEventListener('click', ()=>{
-    rot.pop();
-    preview.textContent = rot.length ? rot.join(' · ') : 'Vacío';
-  });
-  const clear = el('button', {class:'btn bad', text:'Vaciar'});
-  clear.addEventListener('click', ()=>{
-    rot = [];
-    preview.textContent = 'Vacío';
-  });
-  row2.appendChild(undo);
-  row2.appendChild(clear);
-  rotBody.appendChild(row2);
-
-  rotWrap.appendChild(rotBody);
-  wrap.appendChild(rotWrap);
-
-  const foot = modalFoot([
-    {text:'Cancelar', kind:'btn', onClick: ()=> closeModal()},
-    {text:'Guardar', kind:'btn primary', onClick: ()=>{
-      state.data.work.config = cfg;
-      state.data.work.turns = turns;
-      state.data.work.rotation = rot;
-      toast('Turnos guardados');
-      closeModal();
-      render();
-    }}
-  ]);
-  openModal('Turnos', wrap, foot);
-}
-
-function openWorkDayEditor(iso){
-  const cfg = state.data.work.config;
-  const turns = state.data.work.turns;
-  const rec = structuredClone(getWorkDay(iso) || { turn:'', hoursOverride:'', extraHours:0, extraRate:'', nightHours:0, nightRate:'' });
-
-  const d = parseISO(iso);
-  const title = d ? `${d.getDate()} ${monthName(d.getMonth())} ${d.getFullYear()}` : iso;
-
-  const wrap = el('div', {class:'form'});
-
-  // Turn selector
-  const opts = [{value:'', label:'(Auto por rotación)'}].concat(
-    Object.keys(turns).map(code => ({value:code, label:`${code} — ${turns[code].name}`}))
-  );
-  wrap.appendChild(fieldSelect('Turno', rec.turn, opts, (v)=> rec.turn = v));
-
-  const inferred = inferTurnByRotation(iso);
-  if(!rec.turn && inferred){
-    wrap.appendChild(help(`Auto por rotación: ${inferred} — ${getTurn(inferred).name}`));
-  }
-
-  wrap.appendChild(fieldNumber('Horas trabajadas (opcional)', rec.hoursOverride, 'Dejar vacío para usar horas del turno', (v)=> rec.hoursOverride = v, '0.5', '0'));
-
-  wrap.appendChild(el('div', {class:'hr'}));
-  wrap.appendChild(el('div', {class:'card__title', text:'Extras'}));
-
-  const two = el('div', {class:'two'});
-  two.appendChild(fieldNumber('Horas extra', rec.extraHours, '0', (v)=> rec.extraHours = v, '0.5', '0'));
-  two.appendChild(fieldNumber('Tarifa extra €/h (opcional)', rec.extraRate, String(cfg.extraRate||0), (v)=> rec.extraRate = v, '0.01', '0'));
-  wrap.appendChild(two);
-
-  wrap.appendChild(el('div', {class:'hr'}));
-  wrap.appendChild(el('div', {class:'card__title', text:'Velada'}));
-
-  const two2 = el('div', {class:'two'});
-  two2.appendChild(fieldNumber('Horas velada', rec.nightHours, '0', (v)=> rec.nightHours = v, '0.5', '0'));
-  two2.appendChild(fieldNumber('Tarifa velada €/h (opcional)', rec.nightRate, String(cfg.nightRate||0), (v)=> rec.nightRate = v, '0.01', '0'));
-  wrap.appendChild(two2);
-
-  const foot = modalFoot([
-    {text:'Cerrar', kind:'btn', onClick: ()=> closeModal()},
-    {text:'Guardar', kind:'btn primary', onClick: ()=>{
-      // normalize numbers
-      const day = ensureWorkDay(iso);
-      day.turn = rec.turn || '';
-      day.hoursOverride = (rec.hoursOverride === '' ? '' : Number(rec.hoursOverride||0));
-      day.extraHours = Number(rec.extraHours||0);
-      day.extraRate = (rec.extraRate === '' ? '' : Number(rec.extraRate||0));
-      day.nightHours = Number(rec.nightHours||0);
-      day.nightRate = (rec.nightRate === '' ? '' : Number(rec.nightRate||0));
-      toast('Día guardado');
-      closeModal();
-      render();
-    }},
-    {text:'Limpiar día', kind:'btn bad', onClick: ()=>{
-      if(confirm('¿Borrar ajustes de este día?')){
-        delete state.data.work.days[iso];
-        toast('Día limpiado');
-        closeModal();
-        render();
-      }
-    }}
-  ]);
-  openModal(title, wrap, foot);
-}
-
-/* ---------- ECONOMY ---------- */
-function getAccount(id){
-  return state.data.economy.accounts.find(a=>a.id===id) || null;
-}
-function getMovements(accountId){
-  const m = state.data.economy.movements[accountId];
-  if(!Array.isArray(m)) state.data.economy.movements[accountId] = [];
-  return state.data.economy.movements[accountId];
-}
-function accountBalance(accountId){
-  const acc = getAccount(accountId);
-  if(!acc) return 0;
-  const movs = getMovements(accountId);
-  const sum = movs.reduce((s, x)=>{
-    const amt = Number(x.amount||0);
-    return s + (x.type === 'income' ? amt : -amt);
-  }, 0);
-  return Number(acc.initialBalance||0) + sum;
-}
-function economyTotals(){
-  const total = state.data.economy.accounts.reduce((s,a)=> s + accountBalance(a.id), 0);
-  return { total };
+function tabBtn(label, value, active){
+  const b=el('button',{class:`tab ${active===value?'active':''}`,text:label});
+  b.addEventListener('click',()=>{ state.data.economy.ui.tab=value; render(); });
+  return b;
 }
 
 function renderEconomy(){
-  const wrap = el('div', {class:'grid cols-1'});
+  const wrap=el('div',{class:'grid cols-1'});
+  const t=totals();
+  const sum=el('div',{class:'card'});
+  const body=el('div',{class:'card__body'});
+  const kpi=el('div',{class:'kpi'});
+  kpi.appendChild(kpiItem('Saldo total', fmtEUR(t.total),'Suma de todas las cuentas'));
+  kpi.appendChild(kpiItem('Disponible', fmtEUR(t.available),'Saldo - pendientes - tarjetas'));
+  kpi.appendChild(kpiItem('Pendiente', fmtEUR(t.pending),'Gastos fijos + créditos'));
+  kpi.appendChild(kpiItem('Tarjetas', fmtEUR(t.cardUsed),'Consumido total en tarjetas'));
+  body.appendChild(kpi);
+  body.appendChild(el('div',{class:'hr'}));
 
-  // Summary
-  const sumCard = el('div', {class:'card'});
-  const sumBody = el('div', {class:'card__body'});
-  const totals = economyTotals();
+  const tabs=el('div',{class:'tabs'});
+  const active=state.data.economy.ui.tab||'accounts';
+  tabs.appendChild(tabBtn('Cuentas','accounts',active));
+  tabs.appendChild(tabBtn('Gastos fijos','fixed',active));
+  tabs.appendChild(tabBtn('Créditos','credits',active));
+  tabs.appendChild(tabBtn('Metas','goals',active));
+  body.appendChild(tabs);
+  sum.appendChild(body);
+  wrap.appendChild(sum);
 
-  const kpi = el('div', {class:'kpi'});
-  kpi.appendChild(kpiItem('Saldo total', fmtEUR(totals.total), 'Suma de todas las cuentas'));
-  kpi.appendChild(kpiItem('Cuentas', String(state.data.economy.accounts.length), 'Bancarias / efectivo'));
-  kpi.appendChild(kpiItem('Mes', `${monthName(state.ecoMonth)} ${state.ecoYear}`, 'Cambiar mes afecta a filtros (próx.)'));
-  kpi.appendChild(kpiItem('Pendiente', fmtEUR(0), 'Bloque preparado (próx.)'));
-  sumBody.appendChild(kpi);
+  if(active==='accounts') wrap.appendChild(renderAccounts());
+  if(active==='fixed') wrap.appendChild(renderFixed());
+  if(active==='credits') wrap.appendChild(renderCredits());
+  if(active==='goals') wrap.appendChild(renderGoals());
 
-  sumBody.appendChild(el('div', {class:'hr'}));
-  const picker = el('div', {class:'toolbar'});
-  const left = el('div', {class:'row'});
-  const months = Array.from({length:12}, (_,i)=> ({value:i, label: monthName(i)}));
-  const years = Array.from({length:7}, (_,i)=> {
-    const y = new Date().getFullYear() - 3 + i;
-    return {value:y, label:String(y)};
-  });
-  left.appendChild(fieldSelect('Mes', state.ecoMonth, months, (v)=>{ state.ecoMonth = Number(v); render(); }));
-  left.appendChild(fieldSelect('Año', state.ecoYear, years, (v)=>{ state.ecoYear = Number(v); render(); }));
-  picker.appendChild(left);
-  picker.appendChild(el('div', {class:'row'}, [
-    el('button', {class:'btn', text:'Añadir cuenta', onclick: ()=> openAddAccount()}),
-  ]));
-  sumBody.appendChild(picker);
-
-  sumCard.appendChild(sumBody);
-
-  // Accounts list
-  const listCard = el('div', {class:'card'});
-  const listBody = el('div', {class:'card__body'});
-  listBody.appendChild(el('div', {class:'card__title', text:'Cuentas'}));
-  listBody.appendChild(el('div', {class:'card__subtitle', text:'Entra en una cuenta para ver y gestionar sus movimientos.'}));
-
-  const list = el('div', {class:'list', style:'margin-top:12px;'});
-  for(const acc of state.data.economy.accounts){
-    const bal = accountBalance(acc.id);
-    const it = el('div', {class:'item'});
-    it.appendChild(el('div', {class:'item__main'}, [
-      el('div', {class:'item__title', text: acc.name}),
-      el('div', {class:'item__meta', text: acc.bank ? acc.bank : 'Cuenta'}),
-    ]));
-    const right = el('div', {class:'item__right'});
-    right.appendChild(el('span', {class:'badge', text: fmtEUR(bal)}));
-    const openBtn = el('button', {class:'btn primary', text:'Abrir'});
-    openBtn.addEventListener('click', ()=> pushView('account', {accountId: acc.id}));
-    const editBtn = el('button', {class:'btn', text:'Editar'});
-    editBtn.addEventListener('click', ()=> openEditAccount(acc.id));
-    right.appendChild(openBtn);
-    right.appendChild(editBtn);
-    it.appendChild(right);
-    list.appendChild(it);
-  }
-  listBody.appendChild(list);
-  listCard.appendChild(listBody);
-
-  wrap.appendChild(sumCard);
-  wrap.appendChild(listCard);
   return wrap;
 }
 
+/* Accounts */
+function renderAccounts(){
+  const card=el('div',{class:'card'});
+  const body=el('div',{class:'card__body'});
+  body.appendChild(el('div',{class:'card__title',text:'Cuentas'}));
+  body.appendChild(el('div',{class:'row',style:'margin-top:10px;'},[
+    el('button',{class:'btn primary',text:'Añadir cuenta',onClick:openAddAccount})
+  ]));
+  const list=el('div',{class:'list',style:'margin-top:12px;'});
+  state.data.economy.accounts.forEach(a=>{
+    const it=el('div',{class:'item'});
+    it.appendChild(el('div',{class:'item__main'},[
+      el('div',{class:'item__title',text:a.name}),
+      el('div',{class:'item__meta',text:a.bank||'Cuenta'}),
+    ]));
+    const right=el('div',{class:'item__right'});
+    right.appendChild(el('span',{class:'badge',text:fmtEUR(accBalance(a.id))}));
+    right.appendChild(el('button',{class:'btn primary',text:'Abrir',onClick:()=>push('account',{accountId:a.id})}));
+    right.appendChild(el('button',{class:'btn',text:'Editar',onClick:()=>openEditAccount(a.id)}));
+    it.appendChild(right);
+    list.appendChild(it);
+  });
+  body.appendChild(list); card.appendChild(body); return card;
+}
 function openAddAccount(){
-  const draft = { name:'', bank:'', initialBalance:0 };
-  const wrap = el('div', {class:'form'});
-  wrap.appendChild(fieldText('Nombre', draft.name, 'Ej: Santander', v=> draft.name=v));
-  wrap.appendChild(fieldText('Banco (opcional)', draft.bank, 'Ej: BBVA', v=> draft.bank=v));
-  wrap.appendChild(fieldNumber('Saldo inicial', draft.initialBalance, '0', v=> draft.initialBalance=v, '0.01', ''));
-
-  const foot = modalFoot([
-    {text:'Cancelar', kind:'btn', onClick: ()=> closeModal()},
-    {text:'Crear', kind:'btn primary', onClick: ()=>{
-      if(!draft.name.trim()){ toast('Pon un nombre'); return; }
-      state.data.economy.accounts.push({ id: uid(), name: draft.name.trim(), bank: draft.bank.trim(), initialBalance: Number(draft.initialBalance||0), createdAt: Date.now() });
-      toast('Cuenta creada');
-      closeModal();
-      render();
+  const d={name:'',bank:'',initialBalance:0};
+  const w=el('div',{class:'form'});
+  w.appendChild(fieldText('Nombre',d.name,'Ej: Santander',v=>d.name=v));
+  w.appendChild(fieldText('Banco (opcional)',d.bank,'',v=>d.bank=v));
+  w.appendChild(fieldNumber('Saldo inicial',d.initialBalance,'0',v=>d.initialBalance=v));
+  openModal('Nueva cuenta', w, modalFoot([
+    {text:'Cancelar',kind:'btn',onClick:closeModal},
+    {text:'Crear',kind:'btn primary',onClick:()=>{
+      if(!d.name.trim()) return toast('Pon un nombre');
+      state.data.economy.accounts.push({id:uid(),name:d.name.trim(),bank:(d.bank||'').trim(),initialBalance:Number(d.initialBalance||0),cards:[]});
+      toast('Cuenta creada'); closeModal(); render();
     }}
-  ]);
-  openModal('Nueva cuenta', wrap, foot);
-}
-
-function openEditAccount(accountId){
-  const acc = getAccount(accountId);
-  if(!acc) return;
-  const draft = structuredClone(acc);
-  const wrap = el('div', {class:'form'});
-  wrap.appendChild(fieldText('Nombre', draft.name, '', v=> draft.name=v));
-  wrap.appendChild(fieldText('Banco (opcional)', draft.bank, '', v=> draft.bank=v));
-  wrap.appendChild(fieldNumber('Saldo inicial', draft.initialBalance, '0', v=> draft.initialBalance=v, '0.01', ''));
-
-  const foot = modalFoot([
-    {text:'Cerrar', kind:'btn', onClick: ()=> closeModal()},
-    {text:'Guardar', kind:'btn primary', onClick: ()=>{
-      acc.name = (draft.name||'').trim() || acc.name;
-      acc.bank = (draft.bank||'').trim();
-      acc.initialBalance = Number(draft.initialBalance||0);
-      toast('Cuenta guardada');
-      closeModal();
-      render();
-    }},
-    {text:'Borrar cuenta', kind:'btn bad', onClick: ()=>{
-      if(!confirm('¿Borrar cuenta y sus movimientos?')) return;
-      state.data.economy.accounts = state.data.economy.accounts.filter(a=>a.id!==accountId);
-      delete state.data.economy.movements[accountId];
-      toast('Cuenta borrada');
-      closeModal();
-      // go back if inside
-      if(state.view === 'account') popView();
-      render();
-    }}
-  ]);
-  openModal('Editar cuenta', wrap, foot);
-}
-
-function renderAccount(accountId){
-  const acc = getAccount(accountId);
-  if(!acc) return el('div', {class:'card'}, [el('div', {class:'card__body', text:'Cuenta no encontrada.'})]);
-
-  const wrap = el('div', {class:'grid cols-1'});
-
-  const top = el('div', {class:'card'});
-  const topBody = el('div', {class:'card__body'});
-  const bal = accountBalance(accountId);
-  const kpi = el('div', {class:'kpi'});
-  kpi.appendChild(kpiItem('Saldo actual', fmtEUR(bal), 'Saldo inicial + movimientos'));
-  kpi.appendChild(kpiItem('Saldo inicial', fmtEUR(acc.initialBalance||0), 'Edita desde “Editar”'));
-  kpi.appendChild(kpiItem('Movimientos', String(getMovements(accountId).length), 'Ingresos y gastos'));
-  kpi.appendChild(kpiItem('Mes', `${monthName(state.ecoMonth)} ${state.ecoYear}`, 'Filtro visual (próx.)'));
-  topBody.appendChild(kpi);
-
-  topBody.appendChild(el('div', {class:'hr'}));
-  const row = el('div', {class:'row'});
-  row.appendChild(el('button', {class:'btn primary', text:'Añadir movimiento', onclick: ()=> openAddMovement(accountId)}));
-  row.appendChild(el('button', {class:'btn', text:'Editar cuenta', onclick: ()=> openEditAccount(accountId)}));
-  topBody.appendChild(row);
-  top.appendChild(topBody);
-
-  const listCard = el('div', {class:'card'});
-  const listBody = el('div', {class:'card__body'});
-  listBody.appendChild(el('div', {class:'card__title', text:'Movimientos (de esta cuenta)'}));
-  listBody.appendChild(el('div', {class:'card__subtitle', text:'Puedes editar fecha, importe, tipo y descripción.'}));
-
-  const list = el('div', {class:'list', style:'margin-top:12px;'});
-  const movs = getMovements(accountId).slice().sort((a,b)=> (b.date||'').localeCompare(a.date||''));
-  if(movs.length === 0){
-    list.appendChild(el('div', {class:'minihelp', text:'Aún no hay movimientos. Pulsa “Añadir movimiento”.'}));
-  }
-  for(const mv of movs){
-    const it = el('div', {class:'item'});
-    const left = el('div', {class:'item__main'});
-    left.appendChild(el('div', {class:'item__title', text: mv.title || '(sin título)'}));
-    left.appendChild(el('div', {class:'item__meta', text: `${mv.date || ''} • ${mv.type === 'income' ? 'Ingreso' : 'Gasto'}${mv.note ? ' • ' + mv.note : ''}` }));
-    const right = el('div', {class:'item__right'});
-    right.appendChild(el('span', {class:`badge ${mv.type==='income'?'good':'bad'}`, text: (mv.type==='income' ? '+' : '-') + fmtEUR(mv.amount)}));
-    const edit = el('button', {class:'btn', text:'Editar'});
-    edit.addEventListener('click', ()=> openEditMovement(accountId, mv.id));
-    const del = el('button', {class:'btn bad', text:'Borrar'});
-    del.addEventListener('click', ()=>{
-      if(!confirm('¿Borrar movimiento?')) return;
-      state.data.economy.movements[accountId] = getMovements(accountId).filter(x=>x.id!==mv.id);
-      toast('Movimiento borrado');
-      render();
-    });
-    right.appendChild(edit);
-    right.appendChild(del);
-    it.appendChild(left);
-    it.appendChild(right);
-    list.appendChild(it);
-  }
-  listBody.appendChild(list);
-  listCard.appendChild(listBody);
-
-  wrap.appendChild(top);
-  wrap.appendChild(listCard);
-  return wrap;
-}
-
-function openAddMovement(accountId){
-  const draft = { date: fmtDateISO(new Date()), type:'expense', amount:'', title:'', note:'' };
-  const wrap = el('div', {class:'form'});
-  wrap.appendChild(fieldDate('Fecha', draft.date, v=> draft.date=v));
-  wrap.appendChild(fieldSelect('Tipo', draft.type, [
-    {value:'expense', label:'Gasto'},
-    {value:'income', label:'Ingreso'}
-  ], v=> draft.type=v));
-  wrap.appendChild(fieldNumber('Importe (€)', draft.amount, '0', v=> draft.amount=v, '0.01', '0'));
-  wrap.appendChild(fieldText('Título', draft.title, 'Ej: Glovo', v=> draft.title=v));
-  wrap.appendChild(fieldTextarea('Nota (opcional)', draft.note, 'Detalles…', v=> draft.note=v));
-
-  const foot = modalFoot([
-    {text:'Cancelar', kind:'btn', onClick: ()=> closeModal()},
-    {text:'Guardar', kind:'btn primary', onClick: ()=>{
-      if(!draft.amount || Number(draft.amount)<=0){ toast('Importe inválido'); return; }
-      const arr = getMovements(accountId);
-      arr.push({ id: uid(), date: draft.date, type: draft.type, amount: Number(draft.amount), title: (draft.title||'').trim(), note: (draft.note||'').trim() });
-      toast('Movimiento guardado');
-      closeModal();
-      render();
-    }}
-  ]);
-  openModal('Nuevo movimiento', wrap, foot);
-}
-
-function openEditMovement(accountId, movementId){
-  const arr = getMovements(accountId);
-  const mv = arr.find(x=>x.id===movementId);
-  if(!mv) return;
-  const draft = structuredClone(mv);
-
-  const wrap = el('div', {class:'form'});
-  wrap.appendChild(fieldDate('Fecha', draft.date, v=> draft.date=v));
-  wrap.appendChild(fieldSelect('Tipo', draft.type, [
-    {value:'expense', label:'Gasto'},
-    {value:'income', label:'Ingreso'}
-  ], v=> draft.type=v));
-  wrap.appendChild(fieldNumber('Importe (€)', draft.amount, '0', v=> draft.amount=v, '0.01', '0'));
-  wrap.appendChild(fieldText('Título', draft.title, 'Ej: Paypal', v=> draft.title=v));
-  wrap.appendChild(fieldTextarea('Nota (opcional)', draft.note, 'Detalles…', v=> draft.note=v));
-
-  const foot = modalFoot([
-    {text:'Cerrar', kind:'btn', onClick: ()=> closeModal()},
-    {text:'Guardar cambios', kind:'btn primary', onClick: ()=>{
-      if(!draft.amount || Number(draft.amount)<=0){ toast('Importe inválido'); return; }
-      mv.date = draft.date;
-      mv.type = draft.type;
-      mv.amount = Number(draft.amount);
-      mv.title = (draft.title||'').trim();
-      mv.note = (draft.note||'').trim();
-      toast('Movimiento actualizado');
-      closeModal();
-      render();
-    }}
-  ]);
-  openModal('Editar movimiento', wrap, foot);
-}
-
-/* ---------- AGENDA ---------- */
-function renderAgenda(){
-  const wrap = el('div', {class:'grid cols-1'});
-
-  const card = el('div', {class:'card'});
-  const body = el('div', {class:'card__body'});
-
-  const picker = el('div', {class:'toolbar'});
-  const left = el('div', {class:'row'});
-  const months = Array.from({length:12}, (_,i)=> ({value:i, label: monthName(i)}));
-  const years = Array.from({length:7}, (_,i)=> {
-    const y = new Date().getFullYear() - 3 + i;
-    return {value:y, label:String(y)};
-  });
-  left.appendChild(fieldSelect('Mes', state.agendaMonth, months, (v)=>{ state.agendaMonth = Number(v); render(); }));
-  left.appendChild(fieldSelect('Año', state.agendaYear, years, (v)=>{ state.agendaYear = Number(v); render(); }));
-  picker.appendChild(left);
-  picker.appendChild(el('div', {class:'row'}, [
-    el('button', {class:'btn primary', text:'Añadir evento', onclick: ()=> openAddEvent()}),
   ]));
+}
+function openEditAccount(id){
+  const a=getAcc(id); if(!a) return;
+  const d=structuredClone(a);
+  const w=el('div',{class:'form'});
+  w.appendChild(fieldText('Nombre',d.name,'',v=>d.name=v));
+  w.appendChild(fieldText('Banco (opcional)',d.bank,'',v=>d.bank=v));
+  w.appendChild(fieldNumber('Saldo inicial',d.initialBalance,'0',v=>d.initialBalance=v));
+  openModal('Editar cuenta', w, modalFoot([
+    {text:'Cerrar',kind:'btn',onClick:closeModal},
+    {text:'Guardar',kind:'btn primary',onClick:()=>{
+      a.name=(d.name||'').trim()||a.name;
+      a.bank=(d.bank||'').trim();
+      a.initialBalance=Number(d.initialBalance||0);
+      toast('Guardado'); closeModal(); render();
+    }},
+    {text:'Borrar cuenta',kind:'btn bad',onClick:()=>{
+      if(!confirm('¿Borrar cuenta y movimientos?')) return;
+      state.data.economy.accounts=state.data.economy.accounts.filter(x=>x.id!==id);
+      delete state.data.economy.movements[id];
+      toast('Cuenta borrada'); closeModal(); render();
+    }}
+  ]));
+}
 
-  body.appendChild(picker);
-  body.appendChild(el('div', {class:'hr'}));
-  body.appendChild(renderAgendaCalendar(state.agendaYear, state.agendaMonth));
-  card.appendChild(body);
+/* Account detail: cards + movements */
+function renderAccount(id){
+  const a=getAcc(id);
+  if(!a) return el('div',{class:'card'},[el('div',{class:'card__body',text:'Cuenta no encontrada.'})]);
+  const wrap=el('div',{class:'grid cols-1'});
+  const top=el('div',{class:'card'});
+  const b=el('div',{class:'card__body'});
+  const used=(a.cards||[]).reduce((s,c)=>s+Number(c.used||0),0);
+  const k=el('div',{class:'kpi'});
+  k.appendChild(kpiItem('Saldo actual',fmtEUR(accBalance(id)),'Saldo inicial + movimientos'));
+  k.appendChild(kpiItem('Saldo inicial',fmtEUR(a.initialBalance||0),'Editable'));
+  k.appendChild(kpiItem('Tarjetas (consumido)',fmtEUR(used),'Dentro de esta cuenta'));
+  k.appendChild(kpiItem('Movimientos',String(movs(id).length),'Ingresos y gastos'));
+  b.appendChild(k);
+  b.appendChild(el('div',{class:'hr'}));
+  b.appendChild(el('div',{class:'row'},[
+    el('button',{class:'btn primary',text:'Añadir movimiento',onClick:()=>openAddMovement(id)}),
+    el('button',{class:'btn',text:'Añadir tarjeta',onClick:()=>openAddCard(id)}),
+    el('button',{class:'btn',text:'Editar cuenta',onClick:()=>openEditAccount(id)}),
+  ]));
+  top.appendChild(b); wrap.appendChild(top);
 
-  // list
-  const listCard = el('div', {class:'card'});
-  const listBody = el('div', {class:'card__body'});
-  listBody.appendChild(el('div', {class:'card__title', text:'Eventos'}));
-  const list = el('div', {class:'list', style:'margin-top:12px;'});
-  const events = state.data.agenda.events
-    .filter(e=>{
-      const d = parseISO(e.date);
-      return d && d.getFullYear()===state.agendaYear && d.getMonth()===state.agendaMonth;
-    })
-    .slice()
-    .sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time));
-
-  if(events.length===0) list.appendChild(el('div', {class:'minihelp', text:'No hay eventos este mes.'}));
-
-  for(const ev of events){
-    const it = el('div', {class:'item'});
-    it.appendChild(el('div', {class:'item__main'}, [
-      el('div', {class:'item__title', text: ev.title || '(sin título)'}),
-      el('div', {class:'item__meta', text: `${ev.date}${ev.time? ' • '+ev.time:''}${ev.note? ' • '+ev.note:''}`})
+  // cards
+  const cards=el('div',{class:'card'});
+  const cb=el('div',{class:'card__body'});
+  cb.appendChild(el('div',{class:'card__title',text:'Tarjetas'}));
+  cb.appendChild(el('div',{class:'card__subtitle',text:'Límite, consumido y día de cobro.'}));
+  const cl=el('div',{class:'list',style:'margin-top:12px;'});
+  if(!(a.cards||[]).length) cl.appendChild(help('No hay tarjetas.'));
+  (a.cards||[]).forEach(c=>{
+    const it=el('div',{class:'item'});
+    it.appendChild(el('div',{class:'item__main'},[
+      el('div',{class:'item__title',text:c.title||'Tarjeta'}),
+      el('div',{class:'item__meta',text:`Límite ${fmtEUR(c.limit||0)} • Consumido ${fmtEUR(c.used||0)} • Cobro día ${c.day||1}`})
     ]));
-    const right = el('div', {class:'item__right'});
-    right.appendChild(el('span', {class:'badge', text:'Evento'}));
-    const edit = el('button', {class:'btn', text:'Editar'});
-    edit.addEventListener('click', ()=> openEditEvent(ev.id));
-    const del = el('button', {class:'btn bad', text:'Borrar'});
-    del.addEventListener('click', ()=>{
-      if(!confirm('¿Borrar evento?')) return;
-      state.data.agenda.events = state.data.agenda.events.filter(x=>x.id!==ev.id);
-      toast('Evento borrado');
-      render();
-    });
-    right.appendChild(edit);
-    right.appendChild(del);
-    it.appendChild(right);
-    list.appendChild(it);
-  }
-  listBody.appendChild(list);
-  listCard.appendChild(listBody);
+    const r=el('div',{class:'item__right'});
+    r.appendChild(el('span',{class:'badge',text:fmtEUR(Number(c.limit||0)-Number(c.used||0))}));
+    r.appendChild(el('button',{class:'btn',text:'Editar',onClick:()=>openEditCard(id,c.id)}));
+    r.appendChild(el('button',{class:'btn bad',text:'Borrar',onClick:()=>{
+      if(!confirm('¿Borrar tarjeta?')) return;
+      a.cards=a.cards.filter(x=>x.id!==c.id);
+      toast('Tarjeta borrada'); render();
+    }}));
+    it.appendChild(r); cl.appendChild(it);
+  });
+  cb.appendChild(cl); cards.appendChild(cb); wrap.appendChild(cards);
 
-  wrap.appendChild(card);
-  wrap.appendChild(listCard);
+  // movements
+  const mcard=el('div',{class:'card'});
+  const mb=el('div',{class:'card__body'});
+  mb.appendChild(el('div',{class:'card__title',text:'Movimientos'}));
+  const ml=el('div',{class:'list',style:'margin-top:12px;'});
+  const sorted=movs(id).slice().sort((x,y)=>(y.date||'').localeCompare(x.date||''));
+  if(!sorted.length) ml.appendChild(help('Aún no hay movimientos.'));
+  sorted.forEach(mv=>{
+    const it=el('div',{class:'item'});
+    it.appendChild(el('div',{class:'item__main'},[
+      el('div',{class:'item__title',text:mv.title||'(sin título)'}),
+      el('div',{class:'item__meta',text:`${mv.date||''} • ${mv.type==='income'?'Ingreso':'Gasto'}${mv.note?' • '+mv.note:''}`})
+    ]));
+    const r=el('div',{class:'item__right'});
+    r.appendChild(el('span',{class:`badge ${mv.type==='income'?'good':'bad'}`,text:(mv.type==='income'?'+':'-')+fmtEUR(mv.amount)}));
+    r.appendChild(el('button',{class:'btn',text:'Editar',onClick:()=>openEditMovement(id,mv.id)}));
+    r.appendChild(el('button',{class:'btn bad',text:'Borrar',onClick:()=>{
+      if(!confirm('¿Borrar movimiento?')) return;
+      state.data.economy.movements[id]=movs(id).filter(x=>x.id!==mv.id);
+      toast('Borrado'); render();
+    }}));
+    it.appendChild(r); ml.appendChild(it);
+  });
+  mb.appendChild(ml); mcard.appendChild(mb); wrap.appendChild(mcard);
+
   return wrap;
 }
 
-function renderAgendaCalendar(y, m){
-  const cal = el('div', {class:'calendar'});
-  const head = el('div', {class:'cal__head'});
-  for(const d of dowShort()) head.appendChild(el('div', {text:d}));
-  const grid = el('div', {class:'cal__grid'});
-
-  const first = new Date(y, m, 1);
-  const start = startOfWeekMonday(first);
-  const eventsByDate = {};
-  for(const ev of state.data.agenda.events){
-    if(!eventsByDate[ev.date]) eventsByDate[ev.date] = 0;
-    eventsByDate[ev.date]++;
-  }
-
-  for(let i=0;i<42;i++){
-    const d = new Date(start);
-    d.setDate(start.getDate()+i);
-    const iso = fmtDateISO(d);
-    const inMonth = d.getMonth() === m;
-    const cell = el('div', {class:`day ${inMonth?'':'muted'}`});
-    cell.appendChild(el('div', {class:'day__num', text:String(d.getDate())}));
-    const count = eventsByDate[iso] || 0;
-    if(count>0){
-      const pill = el('div', {class:'pill'});
-      const dot = el('span', {class:'dot'});
-      dot.style.background = '#a855f7';
-      pill.appendChild(dot);
-      pill.appendChild(el('span', {text: `${count} evt`}));
-      cell.appendChild(pill);
-    }
-    cell.addEventListener('click', ()=> openAddEvent(iso));
-    grid.appendChild(cell);
-  }
-
-  cal.appendChild(head);
-  cal.appendChild(grid);
-  return cal;
-}
-
-function openAddEvent(prefDate=''){
-  const draft = { date: prefDate || fmtDateISO(new Date()), time:'', title:'', note:'' };
-  const wrap = el('div', {class:'form'});
-  wrap.appendChild(fieldDate('Fecha', draft.date, v=> draft.date=v));
-  wrap.appendChild(fieldText('Hora (opcional)', draft.time, 'Ej: 19:30', v=> draft.time=v));
-  wrap.appendChild(fieldText('Título', draft.title, 'Ej: Médico', v=> draft.title=v));
-  wrap.appendChild(fieldTextarea('Nota (opcional)', draft.note, 'Detalles…', v=> draft.note=v));
-
-  const foot = modalFoot([
-    {text:'Cancelar', kind:'btn', onClick: ()=> closeModal()},
-    {text:'Guardar', kind:'btn primary', onClick: ()=>{
-      if(!draft.title.trim()){ toast('Pon un título'); return; }
-      state.data.agenda.events.push({ id: uid(), date: draft.date, time: (draft.time||'').trim(), title: draft.title.trim(), note: (draft.note||'').trim() });
-      toast('Evento guardado');
-      closeModal();
-      render();
+function openAddCard(accId){
+  const a=getAcc(accId); if(!a) return;
+  const d={title:'',limit:0,used:0,day:1,note:''};
+  const w=el('div',{class:'form'});
+  w.appendChild(fieldText('Nombre',d.title,'Ej: VISA',v=>d.title=v));
+  const two=el('div',{class:'two'});
+  two.appendChild(fieldNumber('Límite (€)',d.limit,'0',v=>d.limit=v));
+  two.appendChild(fieldNumber('Consumido (€)',d.used,'0',v=>d.used=v));
+  w.appendChild(two);
+  w.appendChild(fieldNumber('Día de cobro (1-28)',d.day,'1',v=>d.day=v,'1'));
+  w.appendChild(fieldText('Nota (opcional)',d.note,'',v=>d.note=v));
+  openModal('Nueva tarjeta', w, modalFoot([
+    {text:'Cancelar',kind:'btn',onClick:closeModal},
+    {text:'Guardar',kind:'btn primary',onClick:()=>{
+      a.cards.push({id:uid(),title:(d.title||'').trim(),limit:Number(d.limit||0),used:Number(d.used||0),day:Math.min(Math.max(Number(d.day||1),1),28),note:(d.note||'').trim()});
+      toast('Tarjeta guardada'); closeModal(); render();
     }}
-  ]);
-  openModal('Nuevo evento', wrap, foot);
+  ]));
 }
-
-function openEditEvent(eventId){
-  const ev = state.data.agenda.events.find(x=>x.id===eventId);
-  if(!ev) return;
-  const draft = structuredClone(ev);
-
-  const wrap = el('div', {class:'form'});
-  wrap.appendChild(fieldDate('Fecha', draft.date, v=> draft.date=v));
-  wrap.appendChild(fieldText('Hora (opcional)', draft.time, 'Ej: 19:30', v=> draft.time=v));
-  wrap.appendChild(fieldText('Título', draft.title, 'Ej: Quedada', v=> draft.title=v));
-  wrap.appendChild(fieldTextarea('Nota (opcional)', draft.note, 'Detalles…', v=> draft.note=v));
-
-  const foot = modalFoot([
-    {text:'Cerrar', kind:'btn', onClick: ()=> closeModal()},
-    {text:'Guardar cambios', kind:'btn primary', onClick: ()=>{
-      if(!draft.title.trim()){ toast('Pon un título'); return; }
-      ev.date = draft.date;
-      ev.time = (draft.time||'').trim();
-      ev.title = draft.title.trim();
-      ev.note = (draft.note||'').trim();
-      toast('Evento actualizado');
-      closeModal();
-      render();
+function openEditCard(accId, cardId){
+  const a=getAcc(accId); if(!a) return;
+  const c=(a.cards||[]).find(x=>x.id===cardId); if(!c) return;
+  const d=structuredClone(c);
+  const w=el('div',{class:'form'});
+  w.appendChild(fieldText('Nombre',d.title,'Ej: VISA',v=>d.title=v));
+  const two=el('div',{class:'two'});
+  two.appendChild(fieldNumber('Límite (€)',d.limit,'0',v=>d.limit=v));
+  two.appendChild(fieldNumber('Consumido (€)',d.used,'0',v=>d.used=v));
+  w.appendChild(two);
+  w.appendChild(fieldNumber('Día de cobro (1-28)',d.day,'1',v=>d.day=v,'1'));
+  w.appendChild(fieldText('Nota (opcional)',d.note,'',v=>d.note=v));
+  openModal('Editar tarjeta', w, modalFoot([
+    {text:'Cerrar',kind:'btn',onClick:closeModal},
+    {text:'Guardar',kind:'btn primary',onClick:()=>{
+      c.title=(d.title||'').trim();
+      c.limit=Number(d.limit||0);
+      c.used=Number(d.used||0);
+      c.day=Math.min(Math.max(Number(d.day||1),1),28);
+      c.note=(d.note||'').trim();
+      toast('Tarjeta actualizada'); closeModal(); render();
     }}
-  ]);
-  openModal('Editar evento', wrap, foot);
+  ]));
 }
 
-/* ---------- PWA files live next to app ---------- */
-// done
+/* Movements add/edit */
+function openAddMovement(accId){
+  const d={date:fmtISO(new Date()),type:'expense',amount:'',title:'',note:''};
+  const w=el('div',{class:'form'});
+  w.appendChild(fieldDate('Fecha',d.date,v=>d.date=v));
+  w.appendChild(fieldSelect('Tipo',d.type,[{value:'expense',label:'Gasto'},{value:'income',label:'Ingreso'}],v=>d.type=v));
+  w.appendChild(fieldNumber('Importe (€)',d.amount,'0',v=>d.amount=v));
+  w.appendChild(fieldText('Título',d.title,'Ej: Glovo',v=>d.title=v));
+  w.appendChild(fieldText('Nota (opcional)',d.note,'',v=>d.note=v));
+  openModal('Nuevo movimiento', w, modalFoot([
+    {text:'Cancelar',kind:'btn',onClick:closeModal},
+    {text:'Guardar',kind:'btn primary',onClick:()=>{
+      if(!d.amount||Number(d.amount)<=0) return toast('Importe inválido');
+      movs(accId).push({id:uid(),date:d.date,type:d.type,amount:Number(d.amount),title:(d.title||'').trim(),note:(d.note||'').trim()});
+      toast('Movimiento guardado'); closeModal(); render();
+    }}
+  ]));
+}
+function openEditMovement(accId, movId){
+  const m=movs(accId).find(x=>x.id===movId); if(!m) return;
+  const d=structuredClone(m);
+  const w=el('div',{class:'form'});
+  w.appendChild(fieldDate('Fecha',d.date,v=>d.date=v));
+  w.appendChild(fieldSelect('Tipo',d.type,[{value:'expense',label:'Gasto'},{value:'income',label:'Ingreso'}],v=>d.type=v));
+  w.appendChild(fieldNumber('Importe (€)',d.amount,'0',v=>d.amount=v));
+  w.appendChild(fieldText('Título',d.title,'',v=>d.title=v));
+  w.appendChild(fieldText('Nota (opcional)',d.note,'',v=>d.note=v));
+  openModal('Editar movimiento', w, modalFoot([
+    {text:'Cerrar',kind:'btn',onClick:closeModal},
+    {text:'Guardar',kind:'btn primary',onClick:()=>{
+      if(!d.amount||Number(d.amount)<=0) return toast('Importe inválido');
+      m.date=d.date; m.type=d.type; m.amount=Number(d.amount); m.title=(d.title||'').trim(); m.note=(d.note||'').trim();
+      toast('Actualizado'); closeModal(); render();
+    }}
+  ]));
+}
 
-// initial render
+/* Fixed */
+function renderFixed(){
+  const card=el('div',{class:'card'});
+  const b=el('div',{class:'card__body'});
+  b.appendChild(el('div',{class:'card__title',text:'Gastos fijos'}));
+  b.appendChild(el('div',{class:'card__subtitle',text:'Suscripciones y recibos con día de cobro + cuenta.'}));
+  b.appendChild(el('div',{class:'row',style:'margin-top:10px;'},[el('button',{class:'btn primary',text:'Añadir gasto fijo',onClick:openAddFixed})]));
+  const list=el('div',{class:'list',style:'margin-top:12px;'});
+  if(!state.data.economy.fixed.length) list.appendChild(help('No hay gastos fijos aún.'));
+  state.data.economy.fixed.forEach(f=>{
+    const a=getAcc(f.accountId);
+    const it=el('div',{class:'item'});
+    it.appendChild(el('div',{class:'item__main'},[
+      el('div',{class:'item__title',text:f.title}),
+      el('div',{class:'item__meta',text:`Día ${f.day} • ${a?a.name:'Sin cuenta'}${f.note?' • '+f.note:''}`})
+    ]));
+    const r=el('div',{class:'item__right'});
+    r.appendChild(el('span',{class:'badge',text:fmtEUR(f.amount)}));
+    r.appendChild(el('span',{class:`badge ${f.active?'good':'warn'}`,text:f.active?'Activo':'Pausado'}));
+    r.appendChild(el('button',{class:'btn',text:'Editar',onClick:()=>openEditFixed(f.id)}));
+    r.appendChild(el('button',{class:'btn bad',text:'Borrar',onClick:()=>{
+      if(!confirm('¿Borrar gasto fijo?')) return;
+      state.data.economy.fixed=state.data.economy.fixed.filter(x=>x.id!==f.id);
+      toast('Borrado'); render();
+    }}));
+    it.appendChild(r); list.appendChild(it);
+  });
+  b.appendChild(list); card.appendChild(b); return card;
+}
+function openAddFixed(){
+  const d={title:'',amount:'',day:1,accountId:'',note:'',active:true};
+  const w=el('div',{class:'form'});
+  w.appendChild(fieldText('Título',d.title,'Ej: Netflix',v=>d.title=v));
+  w.appendChild(fieldNumber('Importe (€)',d.amount,'0',v=>d.amount=v));
+  w.appendChild(fieldNumber('Día de cobro (1-28)',d.day,'1',v=>d.day=v,'1'));
+  w.appendChild(fieldSelect('Cuenta asociada',d.accountId,accOpts(),v=>d.accountId=v));
+  w.appendChild(fieldText('Nota (opcional)',d.note,'',v=>d.note=v));
+  w.appendChild(fieldSelect('Estado',d.active?'1':'0',[{value:'1',label:'Activo'},{value:'0',label:'Pausado'}],v=>d.active=(v==='1')));
+  openModal('Nuevo gasto fijo', w, modalFoot([
+    {text:'Cancelar',kind:'btn',onClick:closeModal},
+    {text:'Guardar',kind:'btn primary',onClick:()=>{
+      if(!d.title.trim()) return toast('Pon un título');
+      if(!d.amount||Number(d.amount)<=0) return toast('Importe inválido');
+      state.data.economy.fixed.push({id:uid(),title:d.title.trim(),amount:Number(d.amount),day:Math.min(Math.max(Number(d.day||1),1),28),accountId:d.accountId,note:(d.note||'').trim(),active:!!d.active});
+      toast('Guardado'); closeModal(); render();
+    }}
+  ]));
+}
+function openEditFixed(id){
+  const f=state.data.economy.fixed.find(x=>x.id===id); if(!f) return;
+  const d=structuredClone(f);
+  const w=el('div',{class:'form'});
+  w.appendChild(fieldText('Título',d.title,'',v=>d.title=v));
+  w.appendChild(fieldNumber('Importe (€)',d.amount,'0',v=>d.amount=v));
+  w.appendChild(fieldNumber('Día de cobro (1-28)',d.day,'1',v=>d.day=v,'1'));
+  w.appendChild(fieldSelect('Cuenta asociada',d.accountId,accOpts(),v=>d.accountId=v));
+  w.appendChild(fieldText('Nota (opcional)',d.note,'',v=>d.note=v));
+  w.appendChild(fieldSelect('Estado',d.active?'1':'0',[{value:'1',label:'Activo'},{value:'0',label:'Pausado'}],v=>d.active=(v==='1')));
+  openModal('Editar gasto fijo', w, modalFoot([
+    {text:'Cerrar',kind:'btn',onClick:closeModal},
+    {text:'Guardar',kind:'btn primary',onClick:()=>{
+      f.title=(d.title||'').trim()||f.title;
+      f.amount=Number(d.amount||0);
+      f.day=Math.min(Math.max(Number(d.day||1),1),28);
+      f.accountId=d.accountId;
+      f.note=(d.note||'').trim();
+      f.active=!!d.active;
+      toast('Actualizado'); closeModal(); render();
+    }}
+  ]));
+}
+
+/* Credits */
+function renderCredits(){
+  const card=el('div',{class:'card'});
+  const b=el('div',{class:'card__body'});
+  b.appendChild(el('div',{class:'card__title',text:'Créditos'}));
+  b.appendChild(el('div',{class:'card__subtitle',text:'Cuotas mensuales asociadas a una cuenta.'}));
+  b.appendChild(el('div',{class:'row',style:'margin-top:10px;'},[el('button',{class:'btn primary',text:'Añadir crédito',onClick:openAddCredit})]));
+  const list=el('div',{class:'list',style:'margin-top:12px;'});
+  if(!state.data.economy.credits.length) list.appendChild(help('No hay créditos aún.'));
+  state.data.economy.credits.forEach(c=>{
+    const a=getAcc(c.accountId);
+    const it=el('div',{class:'item'});
+    it.appendChild(el('div',{class:'item__main'},[
+      el('div',{class:'item__title',text:c.title}),
+      el('div',{class:'item__meta',text:`Día ${c.day} • ${a?a.name:'Sin cuenta'}${c.note?' • '+c.note:''}`})
+    ]));
+    const r=el('div',{class:'item__right'});
+    r.appendChild(el('span',{class:'badge',text:fmtEUR(c.amount)}));
+    r.appendChild(el('span',{class:`badge ${c.active?'good':'warn'}`,text:c.active?'Activo':'Pausado'}));
+    r.appendChild(el('button',{class:'btn',text:'Editar',onClick:()=>openEditCredit(c.id)}));
+    r.appendChild(el('button',{class:'btn bad',text:'Borrar',onClick:()=>{
+      if(!confirm('¿Borrar crédito?')) return;
+      state.data.economy.credits=state.data.economy.credits.filter(x=>x.id!==c.id);
+      toast('Borrado'); render();
+    }}));
+    it.appendChild(r); list.appendChild(it);
+  });
+  b.appendChild(list); card.appendChild(b); return card;
+}
+function openAddCredit(){
+  const d={title:'',amount:'',day:1,accountId:'',note:'',active:true};
+  const w=el('div',{class:'form'});
+  w.appendChild(fieldText('Nombre del crédito',d.title,'Ej: Préstamo coche',v=>d.title=v));
+  w.appendChild(fieldNumber('Cuota mensual (€)',d.amount,'0',v=>d.amount=v));
+  w.appendChild(fieldNumber('Día de cobro (1-28)',d.day,'1',v=>d.day=v,'1'));
+  w.appendChild(fieldSelect('Cuenta asociada',d.accountId,accOpts(),v=>d.accountId=v));
+  w.appendChild(fieldText('Nota (opcional)',d.note,'',v=>d.note=v));
+  w.appendChild(fieldSelect('Estado',d.active?'1':'0',[{value:'1',label:'Activo'},{value:'0',label:'Pausado'}],v=>d.active=(v==='1')));
+  openModal('Nuevo crédito', w, modalFoot([
+    {text:'Cancelar',kind:'btn',onClick:closeModal},
+    {text:'Guardar',kind:'btn primary',onClick:()=>{
+      if(!d.title.trim()) return toast('Pon un nombre');
+      if(!d.amount||Number(d.amount)<=0) return toast('Cuota inválida');
+      state.data.economy.credits.push({id:uid(),title:d.title.trim(),amount:Number(d.amount),day:Math.min(Math.max(Number(d.day||1),1),28),accountId:d.accountId,note:(d.note||'').trim(),active:!!d.active});
+      toast('Guardado'); closeModal(); render();
+    }}
+  ]));
+}
+function openEditCredit(id){
+  const c=state.data.economy.credits.find(x=>x.id===id); if(!c) return;
+  const d=structuredClone(c);
+  const w=el('div',{class:'form'});
+  w.appendChild(fieldText('Nombre del crédito',d.title,'',v=>d.title=v));
+  w.appendChild(fieldNumber('Cuota mensual (€)',d.amount,'0',v=>d.amount=v));
+  w.appendChild(fieldNumber('Día de cobro (1-28)',d.day,'1',v=>d.day=v,'1'));
+  w.appendChild(fieldSelect('Cuenta asociada',d.accountId,accOpts(),v=>d.accountId=v));
+  w.appendChild(fieldText('Nota (opcional)',d.note,'',v=>d.note=v));
+  w.appendChild(fieldSelect('Estado',d.active?'1':'0',[{value:'1',label:'Activo'},{value:'0',label:'Pausado'}],v=>d.active=(v==='1')));
+  openModal('Editar crédito', w, modalFoot([
+    {text:'Cerrar',kind:'btn',onClick:closeModal},
+    {text:'Guardar',kind:'btn primary',onClick:()=>{
+      c.title=(d.title||'').trim()||c.title;
+      c.amount=Number(d.amount||0);
+      c.day=Math.min(Math.max(Number(d.day||1),1),28);
+      c.accountId=d.accountId;
+      c.note=(d.note||'').trim();
+      c.active=!!d.active;
+      toast('Actualizado'); closeModal(); render();
+    }}
+  ]));
+}
+
+/* Goals */
+function goalProgress(g){
+  const hist=Array.isArray(g.history)? g.history:[];
+  const saved=hist.reduce((s,h)=>s+(h.type==='in'?Number(h.amount||0):-Number(h.amount||0)),0);
+  const target=Number(g.target||0);
+  const pct=target>0?Math.max(0,Math.min(1,saved/target)):0;
+  return {saved,target,pct};
+}
+function renderGoals(){
+  const card=el('div',{class:'card'});
+  const b=el('div',{class:'card__body'});
+  b.appendChild(el('div',{class:'card__title',text:'Metas'}));
+  b.appendChild(el('div',{class:'card__subtitle',text:'Ahorro por objetivos con aportaciones y gastos.'}));
+  b.appendChild(el('div',{class:'row',style:'margin-top:10px;'},[el('button',{class:'btn primary',text:'Añadir meta',onClick:openAddGoal})]));
+  const list=el('div',{class:'list',style:'margin-top:12px;'});
+  if(!state.data.economy.goals.length) list.appendChild(help('No hay metas aún.'));
+  state.data.economy.goals.forEach(g=>{
+    const p=goalProgress(g);
+    const it=el('div',{class:'item'});
+    it.appendChild(el('div',{class:'item__main'},[
+      el('div',{class:'item__title',text:g.title}),
+      el('div',{class:'item__meta',text:`Ahorrado ${fmtEUR(p.saved)} / ${fmtEUR(p.target)} • ${(p.pct*100).toFixed(1)}%`})
+    ]));
+    const r=el('div',{class:'item__right'});
+    r.appendChild(el('span',{class:'badge',text:fmtEUR(p.target-p.saved)}));
+    r.appendChild(el('button',{class:'btn primary',text:'Abrir',onClick:()=>openGoalDetail(g.id)}));
+    r.appendChild(el('button',{class:'btn',text:'Editar',onClick:()=>openEditGoal(g.id)}));
+    r.appendChild(el('button',{class:'btn bad',text:'Borrar',onClick:()=>{
+      if(!confirm('¿Borrar meta?')) return;
+      state.data.economy.goals=state.data.economy.goals.filter(x=>x.id!==g.id);
+      toast('Borrado'); render();
+    }}));
+    it.appendChild(r); list.appendChild(it);
+  });
+  b.appendChild(list); card.appendChild(b); return card;
+}
+function openAddGoal(){
+  const d={title:'',target:'',deadline:'',accountId:''};
+  const w=el('div',{class:'form'});
+  w.appendChild(fieldText('Nombre de la meta',d.title,'Ej: Ahorrar 10k',v=>d.title=v));
+  w.appendChild(fieldNumber('Objetivo (€)',d.target,'0',v=>d.target=v));
+  w.appendChild(fieldDate('Fecha objetivo (opcional)',d.deadline,v=>d.deadline=v));
+  w.appendChild(fieldSelect('Cuenta origen (opcional)',d.accountId,accOpts(),v=>d.accountId=v));
+  openModal('Nueva meta', w, modalFoot([
+    {text:'Cancelar',kind:'btn',onClick:closeModal},
+    {text:'Guardar',kind:'btn primary',onClick:()=>{
+      if(!d.title.trim()) return toast('Pon un nombre');
+      if(!d.target||Number(d.target)<=0) return toast('Objetivo inválido');
+      state.data.economy.goals.push({id:uid(),title:d.title.trim(),target:Number(d.target),deadline:d.deadline||'',accountId:d.accountId||'',history:[]});
+      toast('Meta creada'); closeModal(); render();
+    }}
+  ]));
+}
+function openEditGoal(id){
+  const g=state.data.economy.goals.find(x=>x.id===id); if(!g) return;
+  const d=structuredClone(g);
+  const w=el('div',{class:'form'});
+  w.appendChild(fieldText('Nombre de la meta',d.title,'',v=>d.title=v));
+  w.appendChild(fieldNumber('Objetivo (€)',d.target,'0',v=>d.target=v));
+  w.appendChild(fieldDate('Fecha objetivo (opcional)',d.deadline,v=>d.deadline=v));
+  w.appendChild(fieldSelect('Cuenta origen (opcional)',d.accountId,accOpts(),v=>d.accountId=v));
+  openModal('Editar meta', w, modalFoot([
+    {text:'Cerrar',kind:'btn',onClick:closeModal},
+    {text:'Guardar',kind:'btn primary',onClick:()=>{
+      g.title=(d.title||'').trim()||g.title;
+      g.target=Number(d.target||0);
+      g.deadline=d.deadline||'';
+      g.accountId=d.accountId||'';
+      toast('Actualizado'); closeModal(); render();
+    }}
+  ]));
+}
+function openGoalDetail(id){
+  const g=state.data.economy.goals.find(x=>x.id===id); if(!g) return;
+  const p=goalProgress(g);
+  const w=el('div',{class:'form'});
+  w.appendChild(el('div',{class:'card__title',text:g.title}));
+  w.appendChild(help(`Ahorrado: ${fmtEUR(p.saved)} / ${fmtEUR(p.target)} • ${(p.pct*100).toFixed(1)}%`));
+  if(g.deadline) w.appendChild(help(`Fecha objetivo: ${g.deadline}`));
+  w.appendChild(el('div',{class:'hr'}));
+  const list=el('div',{class:'list'});
+  const hist=(g.history||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  if(!hist.length) list.appendChild(help('Sin movimientos en la meta.'));
+  hist.forEach(h=>{
+    const it=el('div',{class:'item'});
+    it.appendChild(el('div',{class:'item__main'},[
+      el('div',{class:'item__title',text:h.type==='in'?'Aportación':'Gasto'}),
+      el('div',{class:'item__meta',text:`${h.date}${h.note?' • '+h.note:''}`})
+    ]));
+    const r=el('div',{class:'item__right'});
+    r.appendChild(el('span',{class:`badge ${h.type==='in'?'good':'bad'}`,text:(h.type==='in'?'+':'-')+fmtEUR(h.amount)}));
+    r.appendChild(el('button',{class:'btn',text:'Editar',onClick:()=>{ closeModal(); openEditGoalEntry(id,h.id);} }));
+    r.appendChild(el('button',{class:'btn bad',text:'Borrar',onClick:()=>{
+      if(!confirm('¿Borrar movimiento?')) return;
+      g.history=(g.history||[]).filter(x=>x.id!==h.id);
+      toast('Borrado'); closeModal(); render();
+    }}));
+    it.appendChild(r); list.appendChild(it);
+  });
+  w.appendChild(list);
+  openModal('Meta', w, modalFoot([
+    {text:'Cerrar',kind:'btn',onClick:closeModal},
+    {text:'Añadir aportación',kind:'btn primary',onClick:()=>{ closeModal(); openAddGoalEntry(id,'in'); }},
+    {text:'Añadir gasto',kind:'btn',onClick:()=>{ closeModal(); openAddGoalEntry(id,'out'); }},
+  ]));
+}
+function openAddGoalEntry(goalId, type){
+  const g=state.data.economy.goals.find(x=>x.id===goalId); if(!g) return;
+  const d={date:fmtISO(new Date()),amount:'',note:''};
+  const w=el('div',{class:'form'});
+  w.appendChild(fieldDate('Fecha',d.date,v=>d.date=v));
+  w.appendChild(fieldNumber('Importe (€)',d.amount,'0',v=>d.amount=v));
+  w.appendChild(fieldText('Nota (opcional)',d.note,'',v=>d.note=v));
+  openModal(type==='in'?'Nueva aportación':'Nuevo gasto', w, modalFoot([
+    {text:'Cancelar',kind:'btn',onClick:closeModal},
+    {text:'Guardar',kind:'btn primary',onClick:()=>{
+      if(!d.amount||Number(d.amount)<=0) return toast('Importe inválido');
+      if(!Array.isArray(g.history)) g.history=[];
+      g.history.push({id:uid(),date:d.date,type:(type==='in'?'in':'out'),amount:Number(d.amount),note:(d.note||'').trim()});
+      // reflejo opcional en cuenta
+      if(g.accountId){
+        movs(g.accountId).push({id:uid(),date:d.date,type:(type==='in'?'expense':'income'),amount:Number(d.amount),title:`Meta: ${g.title}`,note:(type==='in'?'Aportación a meta':'Retirada de meta')});
+      }
+      toast('Guardado'); closeModal(); render();
+    }}
+  ]));
+}
+function openEditGoalEntry(goalId, entryId){
+  const g=state.data.economy.goals.find(x=>x.id===goalId); if(!g) return;
+  const h=(g.history||[]).find(x=>x.id===entryId); if(!h) return;
+  const d=structuredClone(h);
+  const w=el('div',{class:'form'});
+  w.appendChild(fieldDate('Fecha',d.date,v=>d.date=v));
+  w.appendChild(fieldNumber('Importe (€)',d.amount,'0',v=>d.amount=v));
+  w.appendChild(fieldText('Nota (opcional)',d.note,'',v=>d.note=v));
+  openModal('Editar movimiento', w, modalFoot([
+    {text:'Cerrar',kind:'btn',onClick:closeModal},
+    {text:'Guardar',kind:'btn primary',onClick:()=>{
+      if(!d.amount||Number(d.amount)<=0) return toast('Importe inválido');
+      h.date=d.date; h.amount=Number(d.amount); h.note=(d.note||'').trim();
+      toast('Actualizado'); closeModal(); render();
+    }}
+  ]));
+}
+
+/* Render */
+function render(){
+  save();
+  const main=$('#main'); main.innerHTML='';
+  const appName=state.data.app.name||'Personal Manager';
+  if(state.view==='home'){
+    if(state.view==='home'){
+    setTopbar(appName,'',false,false,false);
+    main.appendChild(renderHome());
+  }else if(state.view==='economy'){
+    setTopbar('Economía','Resumen + gestión',true,true);
+    main.appendChild(renderEconomy());
+  }else if(state.view==='account'){
+    const a=getAcc(state.params.accountId);
+    setTopbar(a?a.name:'Cuenta','Movimientos',true,true);
+    main.appendChild(renderAccount(state.params.accountId));
+  }
+}
 render();
