@@ -86,3 +86,37 @@ body{
 .tab{border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.18);color:var(--text);padding:10px 14px;border-radius:999px;font-weight:950}
 .tab.active{background:radial-gradient(120% 140% at 0% 0%,rgba(124,58,237,.85),rgba(124,58,237,.25));border-color:rgba(124,58,237,.55)}
 @media (min-width:720px){.kpi{grid-template-columns:repeat(4,minmax(0,1fr))}.bigtiles{grid-template-columns:repeat(3,minmax(0,1fr))}.item__title{max-width:420px}.item__meta{max-width:520px}}
+
+
+/* ===== Extra styles for Work & Agenda ===== */
+.chip{
+  display:inline-flex; align-items:center; gap:8px;
+  padding:8px 10px; border-radius:999px;
+  border:1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.22);
+  font-weight:900; font-size:12px;
+  max-width: 100%;
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+}
+.chip .dot{width:10px;height:10px;border-radius:999px;flex:0 0 auto}
+.progress{
+  height:10px;border-radius:999px;overflow:hidden;
+  border:1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.25);
+}
+.progress > div{height:100%; background: rgba(124,58,237,0.75); width:0%}
+.small{font-size:12px;color:rgba(255,255,255,0.7);font-weight:800}
+.cal__grid .day{position:relative}
+.day__badges{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.day__badges .chip{padding:6px 8px}
+.day__count{
+  position:absolute; right:10px; bottom:10px;
+  font-size:12px; font-weight:950;
+  color: rgba(255,255,255,0.78);
+  background: rgba(0,0,0,0.25);
+  border:1px solid rgba(255,255,255,0.10);
+  border-radius:999px;
+  padding:4px 8px;
+}
