@@ -124,14 +124,14 @@ body{
 
 /* ===== Calendar layout (7 columns) ===== */
 .calendar{display:flex;flex-direction:column;gap:10px}
-.cal__head{display:grid;grid-template-columns:repeat(7,1fr);gap:10px}
+.cal__head{display:grid;grid-template-columns: repeat(7, minmax(0, 1fr));gap:10px}
 .cal__head > div{
   text-align:center;
   font-weight:900;
   color:rgba(255,255,255,0.75);
   padding:8px 0;
 }
-.cal__grid{display:grid;grid-template-columns:repeat(7,1fr);gap:10px}
+.cal__grid{display:grid;grid-template-columns: repeat(7, minmax(0, 1fr));gap:10px}
 .day{
   min-height:84px;
   border-radius:18px;
@@ -149,3 +149,18 @@ body{
   .day{min-height:74px;padding:9px;border-radius:16px}
 }
 
+
+
+/* ===== Responsive calendar fixes (mobile) ===== */
+*, *::before, *::after { box-sizing: border-box; }
+.calendar { width: 100%; max-width: 100%; }
+.cal__head, .cal__grid { width: 100%; max-width: 100%; }
+.cal__head { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal__grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 12px; }
+.day { min-width: 0; }
+@media (max-width: 420px){
+  .cal__grid { gap: 10px; }
+  .day { padding: 10px; border-radius: 18px; }
+  .chip { padding: 6px 8px; font-size: 11px; }
+}
+.card__body { overflow-x: hidden; }
