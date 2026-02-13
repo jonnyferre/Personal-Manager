@@ -1,59 +1,14 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>JFx – Gestiones</title>
-  <link rel="stylesheet" href="styles.css" />
-  <meta name="theme-color" content="#153293" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personal Manager</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
-
 <body>
-  <div id="app">
-    <!-- Top Bar -->
-    <header class="topbar">
-      <div class="topbar__left">
-        <button class="iconbtn" id="btnBack" aria-label="Volver" title="Volver">
-          <span class="icon">←</span>
-        </button>
-        <div class="brand">
-          <div class="brand__title">JFx</div>
-          <div class="brand__subtitle" id="viewSubtitle">Gestiones</div>
-        </div>
-      </div>
-
-      <div class="topbar__right">
-        <button class="iconbtn" id="btnQuickAdd" aria-label="Acción rápida" title="Acción rápida">
-          <span class="icon">＋</span>
-        </button>
-
-        <button class="iconbtn" id="btnSettings" aria-label="Ajustes" title="Ajustes">
-          <span class="icon">⚙</span>
-        </button>
-      </div>
-    </header>
-
-    <!-- Main -->
-    <main class="main" id="main"></main>
-
-    <!-- Bottom Sheet / Modal Root -->
-    <div class="overlay hidden" id="overlay">
-      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-        <div class="modal__head">
-          <div class="modal__title" id="modalTitle">Título</div>
-          <button class="iconbtn" id="modalClose" aria-label="Cerrar" title="Cerrar">
-            <span class="icon">✕</span>
-          </button>
-        </div>
-        <div class="modal__body" id="modalBody"></div>
-        <div class="modal__foot" id="modalFoot"></div>
-      </div>
-    </div>
-
-    <!-- Toast -->
-    <div class="toast hidden" id="toast"></div>
-  </div>
-
+  <h1>Personal Manager</h1>
+  <div id="app"></div>
   <script src="app.js"></script>
 </body>
 </html>
