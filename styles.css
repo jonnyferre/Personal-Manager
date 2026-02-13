@@ -164,3 +164,13 @@ body{
   .chip { padding: 6px 8px; font-size: 11px; }
 }
 .card__body { overflow-x: hidden; }
+
+
+/* ===== KPI layout tweaks (Account) ===== */
+.kpi.kpi--account{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.kpi__item.kpi__item--wide{ grid-column: 1 / -1; }
+.kpi__item--wide .kpi__value{ font-size: 28px; }

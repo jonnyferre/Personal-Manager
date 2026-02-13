@@ -72,6 +72,43 @@ function fieldSelect(label, val, opts, onChange){
   s.addEventListener('change',()=>onChange(s.value));
   w.appendChild(s); return w;
 }
+
+function fieldColor(label, val, onChange){
+  const w=el('div',{class:'field'});
+  w.appendChild(el('div',{class:'label',text:label}));
+  const row=el('div',{class:'row',style:'gap:10px; align-items:center;'});
+  const normalized=(val||'').trim();
+  const init=(/^#?[0-9a-fA-F]{6}$/.test(normalized) ? (normalized.startsWith('#')?normalized:'#'+normalized) : '#7c3aed');
+  const color=el('input',{class:'input',type:'color',value:init});
+  const text=el('input',{class:'input',type:'text',value:(normalized||init),placeholder:'#RRGGBB'});
+
+  function apply(v){
+    let x=(v||'').trim();
+    if(x && !x.startsWith('#')) x='#'+x;
+    if(/^#[0-9a-fA-F]{6}$/.test(x)){
+      color.value=x;
+      text.value=x;
+      onChange(x);
+    }
+  }
+  color.addEventListener('input', ()=>apply(color.value));
+  text.addEventListener('input', ()=>apply(text.value));
+
+  const palette=['#22c55e','#60a5fa','#a78bfa','#f59e0b','#ef4444','#94a3b8','#7c3aed','#0ea5e9'];
+  const chips=el('div',{class:'row',style:'flex-wrap:wrap; gap:10px; margin-top:10px;'});
+  palette.forEach(p=>{
+    const b=el('button',{class:'btn',type:'button',style:'padding:10px 12px; border-radius:999px; min-width:44px; display:flex; align-items:center; justify-content:center;'});
+    b.appendChild(el('span',{class:'dot',style:`background:${p}; width:16px; height:16px; border-radius:999px; display:inline-block;`}));
+    b.addEventListener('click',()=>apply(p));
+    chips.appendChild(b);
+  });
+
+  row.appendChild(color);
+  row.appendChild(text);
+  w.appendChild(row);
+  w.appendChild(chips);
+  return w;
+}
 function toast(msg){
   const t=$('#toast');
   t.textContent=msg;
@@ -408,10 +445,13 @@ function renderAccount(id){
   const wrap=el('div',{class:'grid cols-1'});
   const top=el('div',{class:'card'});
   const b=el('div',{class:'card__body'});
+  const k=el('div',{class:'kpi kpi--account'});
+  // Saldo actual como bloque principal (ancho completo)
+  const saldoWide = kpiItem('Saldo actual',fmtEUR(accBalance(id)),'Saldo inicial + movimientos');
+  saldoWide.classList.add('kpi__item--wide');
+  k.appendChild(saldoWide);
+
   const used=(a.cards||[]).reduce((s,c)=>s+Number(c.used||0),0);
-  const k=el('div',{class:'kpi'});
-  k.appendChild(kpiItem('Saldo actual',fmtEUR(accBalance(id)),'Saldo inicial + movimientos'));
-  k.appendChild(kpiItem('Saldo inicial',fmtEUR(a.initialBalance||0),'Editable'));
   k.appendChild(kpiItem('Tarjetas (consumido)',fmtEUR(used),'Dentro de esta cuenta'));
   k.appendChild(kpiItem('Movimientos',String(movs(id).length),'Ingresos y gastos'));
   b.appendChild(k);
@@ -1098,7 +1138,7 @@ function openEditTurnType(turnId){
   const d=structuredClone(t);
   const w=el('div',{class:'form'});
   w.appendChild(fieldText('Nombre',d.label,'',v=>d.label=v));
-  w.appendChild(fieldText('Color (hex)',d.color,'#22c55e',v=>d.color=v));
+  w.appendChild(fieldColor('Color', d.color, v=>d.color=v));
   w.appendChild(fieldNumber('Horas por defecto',d.hours,'0',v=>d.hours=v,'0.25'));
   w.appendChild(fieldSelect('Tipo',d.kind,[
     {value:'work',label:'Trabajo'},
